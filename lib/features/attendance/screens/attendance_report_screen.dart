@@ -111,7 +111,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                     child: SingleChildScrollView(
                       physics: const AlwaysScrollableScrollPhysics(
                           parent: BouncingScrollPhysics()),
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(16),
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 900),
@@ -120,7 +120,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                             children: [
                               // Filters Section
                               Container(
-                                padding: const EdgeInsets.all(16),
+                                padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
                                   color: AppColors.surface,
                                   borderRadius: BorderRadius.circular(16),
@@ -157,7 +157,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                               AppColors.primaryEmerald,
                                           color: AppColors.textSecondary,
                                           constraints: const BoxConstraints(
-                                              minHeight: 32, minWidth: 70),
+                                              minHeight: 32, minWidth: 64),
                                           children: const [
                                             Text('Daily',
                                                 style: TextStyle(
@@ -173,7 +173,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 12),
                                     Row(
                                       children: [
                                         Expanded(
@@ -185,11 +185,13 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                               const Text('Class',
                                                   style: AppTextStyles
                                                       .inputLabel),
-                                              const SizedBox(height: 6),
+                                              const SizedBox(height: 4),
                                               DropdownButtonFormField<
-                                                  ClassModel?>(
-                                                initialValue:
-                                                    _viewModel.selectedClass,
+                                                  String?>(
+                                                isExpanded: true,
+                                                initialValue: _viewModel
+                                                    .selectedClass
+                                                    ?.classId,
                                                 style:
                                                     AppTextStyles.inputText,
                                                 decoration: InputDecoration(
@@ -199,13 +201,13 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                                   contentPadding:
                                                       const EdgeInsets
                                                           .symmetric(
-                                                          horizontal: 16,
-                                                          vertical: 12),
+                                                          horizontal: 12,
+                                                          vertical: 10),
                                                   enabledBorder:
                                                       OutlineInputBorder(
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                            12),
+                                                            10),
                                                     borderSide:
                                                         const BorderSide(
                                                             color: AppColors
@@ -215,7 +217,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                                       OutlineInputBorder(
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                            12),
+                                                            10),
                                                     borderSide:
                                                         const BorderSide(
                                                             color: AppColors
@@ -225,28 +227,49 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                                 ),
                                                 items: [
                                                   const DropdownMenuItem<
-                                                      ClassModel?>(
+                                                      String?>(
                                                     value: null,
-                                                    child:
-                                                        Text('All Classes'),
+                                                    child: Text(
+                                                      'All Classes',
+                                                      overflow: TextOverflow
+                                                          .ellipsis,
+                                                    ),
                                                   ),
                                                   ..._viewModel.classes
                                                       .map((cls) {
                                                     return DropdownMenuItem<
-                                                        ClassModel?>(
-                                                      value: cls,
-                                                      child:
-                                                          Text(cls.className),
+                                                        String?>(
+                                                      value: cls.classId,
+                                                      child: Text(
+                                                        cls.className,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
                                                     );
                                                   }),
                                                 ],
-                                                onChanged: (cls) => _viewModel
-                                                    .selectClass(cls),
+                                                onChanged: (classId) {
+                                                  if (classId == null) {
+                                                    _viewModel
+                                                        .selectClass(null);
+                                                  } else {
+                                                    final matching =
+                                                        _viewModel.classes
+                                                            .firstWhere(
+                                                      (c) =>
+                                                          c.classId == classId,
+                                                      orElse: () => _viewModel
+                                                          .classes.first,
+                                                    );
+                                                    _viewModel
+                                                        .selectClass(matching);
+                                                  }
+                                                },
                                               ),
                                             ],
                                           ),
                                         ),
-                                        const SizedBox(width: 16),
+                                        const SizedBox(width: 10),
                                         Expanded(
                                           flex: 2,
                                           child: Column(
@@ -259,25 +282,25 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                                       : 'Date',
                                                   style: AppTextStyles
                                                       .inputLabel),
-                                              const SizedBox(height: 6),
+                                              const SizedBox(height: 4),
                                               InkWell(
                                                 onTap: _viewModel.isMonthly
                                                     ? null
                                                     : _selectDate,
                                                 borderRadius:
-                                                    BorderRadius.circular(12),
+                                                    BorderRadius.circular(10),
                                                 child: Container(
                                                   padding:
                                                       const EdgeInsets
                                                           .symmetric(
-                                                          horizontal: 16,
-                                                          vertical: 14),
+                                                          horizontal: 12,
+                                                          vertical: 11),
                                                   decoration: BoxDecoration(
                                                     color: AppColors
                                                         .background,
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                            12),
+                                                            10),
                                                     border: Border.all(
                                                         color: AppColors
                                                             .border),
@@ -287,23 +310,29 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                                         MainAxisAlignment
                                                             .spaceBetween,
                                                     children: [
-                                                      Text(
-                                                        _viewModel.isMonthly
-                                                            ? '${_viewModel.selectedMonth.year}-${_viewModel.selectedMonth.month.toString().padLeft(2, '0')}'
-                                                            : _viewModel
-                                                                .dateQueryString,
-                                                        style: const TextStyle(
-                                                          fontSize: 13,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          color: AppColors
-                                                              .textMain,
+                                                      Expanded(
+                                                        child: Text(
+                                                          _viewModel.isMonthly
+                                                              ? '${_viewModel.selectedMonth.year}-${_viewModel.selectedMonth.month.toString().padLeft(2, '0')}'
+                                                              : _viewModel
+                                                                  .dateQueryString,
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color: AppColors
+                                                                .textMain,
+                                                          ),
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
                                                         ),
                                                       ),
+                                                      const SizedBox(width: 4),
                                                       const Icon(
                                                         Icons
                                                             .calendar_today_rounded,
-                                                        size: 16,
+                                                        size: 14,
                                                         color: AppColors
                                                             .textSecondary,
                                                       ),
@@ -319,11 +348,11 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 20),
 
                               // Overall Summary Card
                               Container(
-                                padding: const EdgeInsets.all(18),
+                                padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
                                   color: AppColors.surface,
                                   borderRadius: BorderRadius.circular(16),
@@ -349,7 +378,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                     ),
                                     Container(
                                         width: 1,
-                                        height: 36,
+                                        height: 32,
                                         color: AppColors.border),
                                     Expanded(
                                       child: _buildSummaryMetric(
@@ -360,7 +389,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                     ),
                                     Container(
                                         width: 1,
-                                        height: 36,
+                                        height: 32,
                                         color: AppColors.border),
                                     Expanded(
                                       child: _buildSummaryMetric(
@@ -371,7 +400,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                     ),
                                     Container(
                                         width: 1,
-                                        height: 36,
+                                        height: 32,
                                         color: AppColors.border),
                                     Expanded(
                                       child: _buildSummaryMetric(
@@ -384,7 +413,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(height: 28),
+                              const SizedBox(height: 24),
 
                               // Class-wise Report Section
                               const Text(
@@ -395,7 +424,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                   color: AppColors.textMain,
                                 ),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               _viewModel.classReports.isEmpty
                                   ? _buildEmptyBox(
                                       'No attendance records found for the selected period.')
@@ -406,61 +435,14 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                       itemCount:
                                           _viewModel.classReports.length,
                                       separatorBuilder: (context, index) =>
-                                          const SizedBox(height: 10),
+                                          const SizedBox(height: 8),
                                       itemBuilder: (context, index) {
                                         final item =
                                             _viewModel.classReports[index];
                                         return _buildClassReportCard(item);
                                       },
                                     ),
-                              const SizedBox(height: 28),
-
-                              // Low Attendance Section (< 75%)
-                              const Text(
-                                'Low Attendance (< 75%)',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.error,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              _viewModel.lowAttendanceStudents.isEmpty
-                                  ? Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(20),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.surface,
-                                        borderRadius:
-                                            BorderRadius.circular(12),
-                                        border: Border.all(
-                                            color: AppColors.border),
-                                      ),
-                                      child: const Text(
-                                        'No students with attendance below 75%.',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: AppColors.textSecondary,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    )
-                                  : ListView.separated(
-                                      shrinkWrap: true,
-                                      physics:
-                                          const NeverScrollableScrollPhysics(),
-                                      itemCount: _viewModel
-                                          .lowAttendanceStudents.length,
-                                      separatorBuilder: (context, index) =>
-                                          const SizedBox(height: 10),
-                                      itemBuilder: (context, index) {
-                                        final item = _viewModel
-                                            .lowAttendanceStudents[index];
-                                        return _buildStudentReportCard(
-                                            item, true);
-                                      },
-                                    ),
-                              const SizedBox(height: 28),
+                              const SizedBox(height: 24),
 
                               // Student-wise Report Section
                               const Text(
@@ -471,7 +453,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                   color: AppColors.textMain,
                                 ),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               _viewModel.studentReports.isEmpty
                                   ? _buildEmptyBox(
                                       'No student attendance records found.')
@@ -482,12 +464,11 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                                       itemCount:
                                           _viewModel.studentReports.length,
                                       separatorBuilder: (context, index) =>
-                                          const SizedBox(height: 10),
+                                          const SizedBox(height: 8),
                                       itemBuilder: (context, index) {
                                         final item =
                                             _viewModel.studentReports[index];
-                                        return _buildStudentReportCard(
-                                            item, false);
+                                        return _buildStudentReportCard(item);
                                       },
                                     ),
                               const SizedBox(height: 20),
@@ -511,7 +492,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
         Text(
           value,
           style: TextStyle(
-            fontSize: 18,
+            fontSize: 16,
             fontWeight: FontWeight.w700,
             color: color,
           ),
@@ -532,7 +513,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
   Widget _buildEmptyBox(String message) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
@@ -551,7 +532,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
 
   Widget _buildClassReportCard(ClassReportItem item) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
@@ -571,6 +552,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                     fontWeight: FontWeight.w700,
                     color: AppColors.textMain,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -584,7 +566,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: AppColors.lightEmerald,
               borderRadius: BorderRadius.circular(20),
@@ -592,7 +574,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
             child: Text(
               '${item.attendancePercentage.toStringAsFixed(1)}%',
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: FontWeight.w700,
                 color: AppColors.darkEmerald,
               ),
@@ -603,16 +585,13 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
     );
   }
 
-  Widget _buildStudentReportCard(StudentReportItem item, bool isLow) {
+  Widget _buildStudentReportCard(StudentReportItem item) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: isLow
-                ? AppColors.error.withValues(alpha: 0.5)
-                : AppColors.border),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -628,6 +607,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                     fontWeight: FontWeight.w700,
                     color: AppColors.textMain,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -641,17 +621,17 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: isLow ? const Color(0xFFFEE2E2) : AppColors.lightEmerald,
+              color: AppColors.lightEmerald,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               '${item.attendancePercentage.toStringAsFixed(1)}%',
-              style: TextStyle(
-                fontSize: 13,
+              style: const TextStyle(
+                fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: isLow ? AppColors.error : AppColors.darkEmerald,
+                color: AppColors.darkEmerald,
               ),
             ),
           ),

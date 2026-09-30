@@ -108,12 +108,6 @@ class AttendanceReportsViewModel extends ChangeNotifier {
   List<StudentReportItem> _studentReports = [];
   List<StudentReportItem> get studentReports => List.unmodifiable(_studentReports);
 
-  List<StudentReportItem> get lowAttendanceStudents {
-    return _studentReports
-        .where((s) => s.totalMarkedDays > 0 && s.attendancePercentage < 75.0)
-        .toList();
-  }
-
   String get dateQueryString {
     return '${_selectedDate.year.toString().padLeft(4, '0')}-'
         '${_selectedDate.month.toString().padLeft(2, '0')}-'
@@ -131,7 +125,18 @@ class AttendanceReportsViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _classes = await _classRepository.getClasses();
+      final rawClasses = await _classRepository.getClasses();
+      final uniqueMap = <String, ClassModel>{};
+      for (var c in rawClasses) {
+        uniqueMap[c.classId] = c;
+      }
+      _classes = uniqueMap.values.toList();
+      _classes.sort((a, b) => a.className.compareTo(b.className));
+
+      if (_selectedClass != null) {
+        _selectedClass = uniqueMap[_selectedClass!.classId] ?? _selectedClass;
+      }
+
       _allStudents = await _studentRepository.getStudents();
       _allAttendance = await _attendanceRepository.getAllAttendance();
 
