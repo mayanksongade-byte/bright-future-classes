@@ -45,6 +45,7 @@ class TeachersViewModel extends ChangeNotifier {
     required String name,
     required String email,
     required String phone,
+    required String address,
     required List<String> classIds,
     String status = 'active',
   }) async {
@@ -62,7 +63,8 @@ class TeachersViewModel extends ChangeNotifier {
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        classIds: classIds,
+        address: address.trim(),
+        classIds: classIds.toSet().toList(),
         status: status,
       );
 
@@ -85,6 +87,7 @@ class TeachersViewModel extends ChangeNotifier {
     required String name,
     required String email,
     required String phone,
+    required String address,
     required List<String> classIds,
     required String status,
     DateTime? createdAt,
@@ -97,14 +100,26 @@ class TeachersViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final updatedTeacher = TeacherModel(
-        teacherId: teacherId,
+      final existingDocs = await _teacherRepository.getTeachers();
+      final existing = existingDocs.firstWhere(
+        (t) => t.teacherId == teacherId,
+        orElse: () => TeacherModel(
+          teacherId: teacherId,
+          name: name,
+          email: email,
+          phone: phone,
+          classIds: classIds,
+        ),
+      );
+
+      final updatedTeacher = existing.copyWith(
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        classIds: classIds,
+        address: address.trim(),
+        classIds: classIds.toSet().toList(),
         status: status,
-        createdAt: createdAt,
+        createdAt: createdAt ?? existing.createdAt,
       );
 
       await _teacherRepository.updateTeacher(updatedTeacher);

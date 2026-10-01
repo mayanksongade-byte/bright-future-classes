@@ -50,7 +50,10 @@ class StudentsViewModel extends ChangeNotifier {
   Future<bool> createStudent({
     required String studentId,
     required String name,
+    required String dateOfBirth,
+    required String gender,
     required String phone,
+    required String address,
     required String parentName,
     required String parentPhone,
     required double totalFees,
@@ -69,7 +72,10 @@ class StudentsViewModel extends ChangeNotifier {
       final student = StudentModel(
         studentId: studentId.trim(),
         name: name.trim(),
+        dateOfBirth: dateOfBirth.trim(),
+        gender: gender.trim(),
         phone: phone.trim(),
+        address: address.trim(),
         parentName: parentName.trim(),
         parentPhone: parentPhone.trim(),
         classId: (classId != null && classId.trim().isNotEmpty)
@@ -91,6 +97,67 @@ class StudentsViewModel extends ChangeNotifier {
       await _feeRepository.saveFee(fee);
 
       _successMessage = 'Student and fee record added successfully';
+      _isActionLoading = false;
+      await fetchStudents();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _isActionLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updateStudent({
+    required String studentId,
+    required String name,
+    required String dateOfBirth,
+    required String gender,
+    required String phone,
+    required String address,
+    required String parentName,
+    required String parentPhone,
+    required String? classId,
+    required String status,
+  }) async {
+    if (_isActionLoading) return false;
+
+    _isActionLoading = true;
+    _errorMessage = null;
+    _successMessage = null;
+    notifyListeners();
+
+    try {
+      final existingDocs = await _studentRepository.getStudents();
+      final existing = existingDocs.firstWhere(
+        (s) => s.studentId == studentId,
+        orElse: () => StudentModel(
+          studentId: studentId,
+          name: name,
+          phone: phone,
+          parentName: parentName,
+          parentPhone: parentPhone,
+        ),
+      );
+
+      final updated = existing.copyWith(
+        name: name.trim(),
+        dateOfBirth: dateOfBirth.trim(),
+        gender: gender.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        parentName: parentName.trim(),
+        parentPhone: parentPhone.trim(),
+        classId: (classId != null && classId.trim().isNotEmpty)
+            ? classId.trim()
+            : null,
+        status: status,
+        createdAt: existing.createdAt,
+      );
+
+      await _studentRepository.updateStudent(updated);
+
+      _successMessage = 'Student updated successfully';
       _isActionLoading = false;
       await fetchStudents();
       return true;

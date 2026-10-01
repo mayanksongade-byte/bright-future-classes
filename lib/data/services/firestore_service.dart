@@ -21,7 +21,7 @@ class FirestoreService {
   // Student Document Methods
   Future<void> saveStudentDocument(
       String studentId, Map<String, dynamic> data) async {
-    await _firestore.collection('students').doc(studentId).set(data);
+    await _firestore.collection('students').doc(studentId).set(data, SetOptions(merge: true));
   }
 
   Future<bool> checkStudentExists(String studentId) async {
@@ -54,7 +54,7 @@ class FirestoreService {
 
   Future<void> saveTeacherDocument(
       String teacherId, Map<String, dynamic> data) async {
-    await _firestore.collection('teachers').doc(teacherId).set(data);
+    await _firestore.collection('teachers').doc(teacherId).set(data, SetOptions(merge: true));
   }
 
   Future<int> getTeacherCount() async {
@@ -72,7 +72,7 @@ class FirestoreService {
 
   Future<void> updateTeacherDocument(
       String teacherId, Map<String, dynamic> data) async {
-    await _firestore.collection('teachers').doc(teacherId).update(data);
+    await _firestore.collection('teachers').doc(teacherId).set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteTeacherDocument(String teacherId) async {
@@ -86,12 +86,12 @@ class FirestoreService {
 
   Future<void> saveClassDocument(
       String classId, Map<String, dynamic> data) async {
-    await _firestore.collection('classes').doc(classId).set(data);
+    await _firestore.collection('classes').doc(classId).set(data, SetOptions(merge: true));
   }
 
   Future<void> updateClassDocument(
       String classId, Map<String, dynamic> data) async {
-    await _firestore.collection('classes').doc(classId).update(data);
+    await _firestore.collection('classes').doc(classId).set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteClassDocument(String classId) async {
@@ -185,11 +185,11 @@ class FirestoreService {
   }
 
   Future<void> savePaymentDocument(String paymentId, Map<String, dynamic> data) async {
-    await _firestore.collection('fee_payments').doc(paymentId).set(data);
+    await _firestore.collection('fee_payments').doc(paymentId).set(data, SetOptions(merge: true));
   }
 
   Future<void> updatePaymentDocument(String paymentId, Map<String, dynamic> data) async {
-    await _firestore.collection('fee_payments').doc(paymentId).update(data);
+    await _firestore.collection('fee_payments').doc(paymentId).set(data, SetOptions(merge: true));
   }
 
   Future<void> deletePaymentDocument(String paymentId) async {
@@ -224,7 +224,7 @@ class FirestoreService {
 
   Future<void> updateHomeworkDocument(
       String homeworkId, Map<String, dynamic> data) async {
-    await _firestore.collection('homework').doc(homeworkId).update(data);
+    await _firestore.collection('homework').doc(homeworkId).set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteHomeworkDocument(String homeworkId) async {
@@ -258,7 +258,7 @@ class FirestoreService {
   }
 
   Future<void> updateTestDocument(String testId, Map<String, dynamic> data) async {
-    await _firestore.collection('tests').doc(testId).update(data);
+    await _firestore.collection('tests').doc(testId).set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteTestDocument(String testId) async {

@@ -49,6 +49,18 @@ class _StudentsScreenState extends State<StudentsScreen> {
     }
   }
 
+  Future<void> _navigateToEditStudent(StudentModel student) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => AddStudentScreen(studentToEdit: student),
+      ),
+    );
+
+    if (result == true && mounted) {
+      _viewModel.fetchStudents();
+    }
+  }
+
   Future<void> _confirmDelete(StudentModel student) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -450,11 +462,24 @@ class _StudentsScreenState extends State<StudentsScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 onSelected: (value) {
-                  if (value == 'delete') {
+                  if (value == 'edit') {
+                    _navigateToEditStudent(student);
+                  } else if (value == 'delete') {
                     _confirmDelete(student);
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit_outlined,
+                            size: 18, color: AppColors.primaryEmerald),
+                        SizedBox(width: 8),
+                        Text('Edit Student'),
+                      ],
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: 'delete',
                     child: Row(

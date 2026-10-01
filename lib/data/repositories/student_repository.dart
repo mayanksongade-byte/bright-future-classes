@@ -32,6 +32,27 @@ class StudentRepository {
     }
   }
 
+  Future<void> updateStudent(StudentModel student) async {
+    try {
+      if (student.studentId.isEmpty) {
+        throw Exception('Student ID is required to update a student.');
+      }
+      await _firestoreService.saveStudentDocument(
+        student.studentId,
+        student.toMap(),
+      );
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw Exception(
+            'Permission denied. Only active admins can update student records.');
+      }
+      throw Exception('Database error (${e.code}): ${e.message}');
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('An unexpected error occurred while updating student.');
+    }
+  }
+
   Future<List<StudentModel>> getStudents() async {
     try {
       final docs = await _firestoreService.getStudentsDocuments();

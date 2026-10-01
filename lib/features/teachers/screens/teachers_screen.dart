@@ -49,6 +49,18 @@ class _TeachersScreenState extends State<TeachersScreen> {
     }
   }
 
+  Future<void> _navigateToEditTeacher(TeacherModel teacher) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => AddTeacherScreen(teacherToEdit: teacher),
+      ),
+    );
+
+    if (result == true && mounted) {
+      _viewModel.fetchTeachers();
+    }
+  }
+
   Future<void> _confirmDelete(TeacherModel teacher) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -297,8 +309,8 @@ class _TeachersScreenState extends State<TeachersScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3E8FF),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF3E8FF),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -452,11 +464,24 @@ class _TeachersScreenState extends State<TeachersScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 onSelected: (value) {
-                  if (value == 'delete') {
+                  if (value == 'edit') {
+                    _navigateToEditTeacher(teacher);
+                  } else if (value == 'delete') {
                     _confirmDelete(teacher);
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit_outlined,
+                            size: 18, color: AppColors.primaryEmerald),
+                        SizedBox(width: 8),
+                        Text('Edit Teacher'),
+                      ],
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: 'delete',
                     child: Row(

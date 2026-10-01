@@ -17,6 +17,34 @@ class Validators {
     return null;
   }
 
+  static String? validate10DigitPhone(String? value, [String fieldName = 'Phone number']) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter $fieldName';
+    }
+    final trimmed = value.trim();
+    if (!RegExp(r'^[0-9]{10}$').hasMatch(trimmed)) {
+      return '$fieldName must be exactly 10 digits (numbers only)';
+    }
+    return null;
+  }
+
+  static String? validateDateOfBirth(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please select Date of Birth';
+    }
+    final date = DateTime.tryParse(value.trim());
+    if (date == null) {
+      return 'Please select a valid date';
+    }
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final birthDate = DateTime(date.year, date.month, date.day);
+    if (birthDate.isAfter(todayDate)) {
+      return 'Date of Birth cannot be in the future';
+    }
+    return null;
+  }
+
   static String? validateEmail(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Please enter email address';
