@@ -73,9 +73,14 @@ class HomeworkViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final classes = await _classRepository.getClasses();
-      final classMap = {for (var c in classes) c.classId: c};
-      _classes = classes;
+      final rawClasses = await _classRepository.getClasses();
+      final uniqueMap = <String, ClassModel>{};
+      for (var c in rawClasses) {
+        uniqueMap[c.classId] = c;
+      }
+      _classes = uniqueMap.values.toList();
+      _classes.sort((a, b) => a.className.compareTo(b.className));
+      final classMap = {for (var c in _classes) c.classId: c};
 
       final homeworkList = await _homeworkRepository.getAllHomework();
       _homeworkItems = homeworkList.map((hw) {

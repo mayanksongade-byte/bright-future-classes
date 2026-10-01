@@ -247,4 +247,75 @@ class FirestoreService {
     }
     return null;
   }
+
+  // Test Document Methods
+  String generateTestId() {
+    return _firestore.collection('tests').doc().id;
+  }
+
+  Future<void> saveTestDocument(String testId, Map<String, dynamic> data) async {
+    await _firestore.collection('tests').doc(testId).set(data, SetOptions(merge: true));
+  }
+
+  Future<void> updateTestDocument(String testId, Map<String, dynamic> data) async {
+    await _firestore.collection('tests').doc(testId).update(data);
+  }
+
+  Future<void> deleteTestDocument(String testId) async {
+    await _firestore.collection('tests').doc(testId).delete();
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllTestDocuments() async {
+    final snapshot = await _firestore
+        .collection('tests')
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs;
+  }
+
+  Future<Map<String, dynamic>?> getTestDocument(String testId) async {
+    final doc = await _firestore.collection('tests').doc(testId).get();
+    if (doc.exists) {
+      return doc.data();
+    }
+    return null;
+  }
+
+  // Mark Document Methods
+  Future<void> saveMarkDocument(String markId, Map<String, dynamic> data) async {
+    await _firestore.collection('marks').doc(markId).set(data, SetOptions(merge: true));
+  }
+
+  Future<void> saveMarksBatch(List<dynamic> marksList) async {
+    final batch = _firestore.batch();
+    for (var m in marksList) {
+      final docRef = _firestore.collection('marks').doc(m.markId);
+      batch.set(docRef, m.toMap(), SetOptions(merge: true));
+    }
+    await batch.commit();
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getMarkDocumentsForTest(String testId) async {
+    final snapshot = await _firestore
+        .collection('marks')
+        .where('testId', isEqualTo: testId)
+        .get();
+    return snapshot.docs;
+  }
+
+  Future<void> deleteMarkDocument(String markId) async {
+    await _firestore.collection('marks').doc(markId).delete();
+  }
+
+  Future<void> deleteMarksForTest(String testId) async {
+    final snapshot = await _firestore
+        .collection('marks')
+        .where('testId', isEqualTo: testId)
+        .get();
+    final batch = _firestore.batch();
+    for (var doc in snapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
 }

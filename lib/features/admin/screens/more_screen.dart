@@ -5,6 +5,7 @@ import '../../auth/screens/login_screen.dart';
 import '../../attendance/screens/admin_attendance_screen.dart';
 import '../../fees/screens/fees_screen.dart';
 import '../../homework/screens/homework_list_screen.dart';
+import '../../tests/screens/tests_list_screen.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -111,8 +112,26 @@ class MoreScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   _buildMenuItem(
                     context: context,
+                    title: 'Tests & Marks',
+                    subtitle:
+                        'Create tests, enter student marks, and view results',
+                    icon: Icons.quiz_outlined,
+                    iconColor: AppColors.primaryEmerald,
+                    bgColor: AppColors.lightEmerald,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const TestsListScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildMenuItem(
+                    context: context,
                     title: 'Fees Management',
-                    subtitle: 'Manage student fee records, discounts, and payments',
+                    subtitle:
+                        'Manage student fee records, discounts, and payments',
                     icon: Icons.account_balance_wallet_outlined,
                     iconColor: AppColors.warning,
                     bgColor: const Color(0xFFFEF3C7),

@@ -75,6 +75,14 @@ service cloud.firestore {
       allow read, create, update, delete: if isActiveAdmin();
     }
 
+    // Tests & Marks Collections: Active Admin can manage tests and marks
+    match /tests/{testId} {
+      allow read, create, update, delete: if isActiveAdmin();
+    }
+    match /marks/{markId} {
+      allow read, create, update, delete: if isActiveAdmin();
+    }
+
     // Default deny for all other collections
     match /{document=**} {
       allow read, write: if false;

@@ -10,6 +10,7 @@ import '../../students/screens/add_student_screen.dart';
 import '../../students/screens/students_screen.dart';
 import '../../teachers/screens/add_teacher_screen.dart';
 import '../../teachers/screens/teachers_screen.dart';
+import '../../tests/screens/tests_list_screen.dart';
 import '../view_models/admin_view_model.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -121,7 +122,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Continuous 2-Column Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework)
+                  // Continuous 2-Column Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework, Total Tests)
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final isWide = constraints.maxWidth > 600;
@@ -208,7 +209,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               _viewModel.loadDashboardData();
                             },
                           ),
-                          const SizedBox.shrink(), // Empty space for 6th grid slot
+                          _buildStatCard(
+                            title: 'Total Tests',
+                            value: '${_viewModel.totalTests}',
+                            icon: Icons.quiz_outlined,
+                            iconColor: AppColors.primaryEmerald,
+                            bgColor: AppColors.lightEmerald,
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const TestsListScreen(),
+                                ),
+                              );
+                              _viewModel.loadDashboardData();
+                            },
+                          ),
                         ],
                       );
                     },

@@ -36,9 +36,14 @@ class ClassRepository {
   Future<List<ClassModel>> getClasses() async {
     try {
       final docs = await _firestoreService.getClassesDocuments();
-      return docs
+      final classes = docs
           .map((doc) => ClassModel.fromMap(doc.data(), doc.id))
           .toList();
+      final uniqueMap = <String, ClassModel>{};
+      for (var c in classes) {
+        uniqueMap[c.classId] = c;
+      }
+      return uniqueMap.values.toList();
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw Exception('Permission denied. Unable to fetch classes.');
@@ -52,9 +57,14 @@ class ClassRepository {
 
   Stream<List<ClassModel>> streamClasses() {
     return _firestoreService.streamClassesDocuments().map((docs) {
-      return docs
+      final classes = docs
           .map((doc) => ClassModel.fromMap(doc.data(), doc.id))
           .toList();
+      final uniqueMap = <String, ClassModel>{};
+      for (var c in classes) {
+        uniqueMap[c.classId] = c;
+      }
+      return uniqueMap.values.toList();
     });
   }
 

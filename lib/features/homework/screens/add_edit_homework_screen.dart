@@ -49,17 +49,22 @@ class _AddEditHomeworkScreenState extends State<AddEditHomeworkScreen> {
     } else {
       _assignedDate = DateTime.now();
       _dueDate = DateTime.now().add(const Duration(days: 3));
-    }
-
-    if (widget.preloadedClasses != null &&
-        widget.preloadedClasses!.isNotEmpty) {
-      _selectedClassId ??= widget.preloadedClasses!.first.classId;
+      if (widget.preloadedClasses != null &&
+          widget.preloadedClasses!.isNotEmpty) {
+        final seen = <String>{};
+        for (var c in widget.preloadedClasses!) {
+          if (c.classId.isNotEmpty && seen.add(c.classId)) {
+            _selectedClassId = c.classId;
+            break;
+          }
+        }
+      }
     }
 
     _viewModel.fetchHomeworkData().then((_) {
-      if (mounted && _selectedClassId == null && _viewModel.classes.isNotEmpty) {
+      if (mounted && (_selectedClassId == null || _selectedClassId!.isEmpty) && _viewModel.classes.isNotEmpty) {
         setState(() {
-          _selectedClassId = _viewModel.classes.first.classId;
+          _selectedClassId = widget.homeworkToEdit?.classId ?? _viewModel.classes.first.classId;
         });
       }
     });
@@ -185,7 +190,62 @@ class _AddEditHomeworkScreenState extends State<AddEditHomeworkScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.homeworkToEdit != null;
-    final classesList = widget.preloadedClasses ?? _viewModel.classes;
+    final rawClasses = widget.preloadedClasses ?? _viewModel.classes;
+    
+    // Strictly deduplicate classes by classId
+    final uniqueMap = <String, ClassModel>{};
+    for (var c in rawClasses) {
+      if (c.classId.isNotEmpty) {
+        uniqueMap[c.classId] = c;
+      }
+    }
+    final classesList = uniqueMap.values.toList();
+    classesList.sort((a, b) => a.className.compareTo(b.className));
+
+    // If _selectedClassId is null and we have classes, default to first class
+    if ((_selectedClassId == null || _selectedClassId!.isEmpty) && classesList.isNotEmpty) {
+      _selectedClassId = classesList.first.classId;
+    }
+
+    List<DropdownMenuItem<String>> dropdownItems = [];
+    if (classesList.isEmpty) {
+      if (_selectedClassId != null && _selectedClassId!.isNotEmpty) {
+        dropdownItems.add(
+          DropdownMenuItem<String>(
+            value: _selectedClassId!,
+            child: Text('Class (ID: $_selectedClassId)',
+                style: const TextStyle(color: AppColors.textSecondary)),
+          ),
+        );
+      } else {
+        dropdownItems.add(
+          const DropdownMenuItem<String>(
+            value: '',
+            child: Text('Loading classes...',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+        );
+      }
+    } else {
+      dropdownItems = classesList.map((cls) {
+        return DropdownMenuItem<String>(
+          value: cls.classId,
+          child: Text(cls.className, overflow: TextOverflow.ellipsis),
+        );
+      }).toList();
+
+      if (_selectedClassId != null &&
+          _selectedClassId!.isNotEmpty &&
+          !uniqueMap.containsKey(_selectedClassId)) {
+        dropdownItems.add(
+          DropdownMenuItem<String>(
+            value: _selectedClassId!,
+            child: Text('Selected Class (ID: $_selectedClassId)',
+                style: const TextStyle(color: AppColors.textSecondary)),
+          ),
+        );
+      }
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -243,24 +303,9 @@ class _AddEditHomeworkScreenState extends State<AddEditHomeworkScreen> {
                             color: AppColors.primaryEmerald, width: 1.5),
                       ),
                     ),
-                    items: classesList.isEmpty
-                        ? [
-                            const DropdownMenuItem(
-                              value: null,
-                              child: Text('Loading classes...',
-                                  style: TextStyle(
-                                      color: AppColors.textSecondary)),
-                            )
-                          ]
-                        : classesList.map((cls) {
-                            return DropdownMenuItem<String>(
-                              value: cls.classId,
-                              child: Text(cls.className,
-                                  overflow: TextOverflow.ellipsis),
-                            );
-                          }).toList(),
+                    items: dropdownItems,
                     onChanged: (val) {
-                      if (val != null) {
+                      if (val != null && val.isNotEmpty) {
                         setState(() {
                           _selectedClassId = val;
                         });
@@ -468,6 +513,5 @@ class _AddEditHomeworkScreenState extends State<AddEditHomeworkScreen> {
         ),
       ),
     );
-
   }
 }

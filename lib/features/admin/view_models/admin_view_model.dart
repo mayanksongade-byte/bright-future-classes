@@ -5,6 +5,7 @@ import '../../../data/repositories/fee_repository.dart';
 import '../../../data/repositories/homework_repository.dart';
 import '../../../data/repositories/student_repository.dart';
 import '../../../data/repositories/teacher_repository.dart';
+import '../../../data/repositories/test_repository.dart';
 
 class AdminViewModel extends ChangeNotifier {
   final ClassRepository _classRepository;
@@ -13,6 +14,7 @@ class AdminViewModel extends ChangeNotifier {
   final AttendanceRepository _attendanceRepository;
   final FeeRepository _feeRepository;
   final HomeworkRepository _homeworkRepository;
+  final TestRepository _testRepository;
 
   AdminViewModel({
     ClassRepository? classRepository,
@@ -21,12 +23,14 @@ class AdminViewModel extends ChangeNotifier {
     AttendanceRepository? attendanceRepository,
     FeeRepository? feeRepository,
     HomeworkRepository? homeworkRepository,
+    TestRepository? testRepository,
   })  : _classRepository = classRepository ?? ClassRepository(),
         _studentRepository = studentRepository ?? StudentRepository(),
         _teacherRepository = teacherRepository ?? TeacherRepository(),
         _attendanceRepository = attendanceRepository ?? AttendanceRepository(),
         _feeRepository = feeRepository ?? FeeRepository(),
-        _homeworkRepository = homeworkRepository ?? HomeworkRepository();
+        _homeworkRepository = homeworkRepository ?? HomeworkRepository(),
+        _testRepository = testRepository ?? TestRepository();
 
   int _totalStudents = 0;
   int get totalStudents => _totalStudents;
@@ -48,6 +52,9 @@ class AdminViewModel extends ChangeNotifier {
 
   int _totalHomework = 0;
   int get totalHomework => _totalHomework;
+
+  int _totalTests = 0;
+  int get totalTests => _totalTests;
 
   double get todayAttendancePercentage {
     final total = _todayPresent + _todayAbsent;
@@ -119,6 +126,13 @@ class AdminViewModel extends ChangeNotifier {
       _totalHomework = homeworkList.length;
     } catch (_) {
       _totalHomework = 0;
+    }
+
+    try {
+      final testsList = await _testRepository.getAllTests();
+      _totalTests = testsList.length;
+    } catch (_) {
+      _totalTests = 0;
     }
 
     _isLoading = false;
