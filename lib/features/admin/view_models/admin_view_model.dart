@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../data/repositories/attendance_repository.dart';
 import '../../../data/repositories/class_repository.dart';
 import '../../../data/repositories/fee_repository.dart';
+import '../../../data/repositories/homework_repository.dart';
 import '../../../data/repositories/student_repository.dart';
 import '../../../data/repositories/teacher_repository.dart';
 
@@ -11,6 +12,7 @@ class AdminViewModel extends ChangeNotifier {
   final TeacherRepository _teacherRepository;
   final AttendanceRepository _attendanceRepository;
   final FeeRepository _feeRepository;
+  final HomeworkRepository _homeworkRepository;
 
   AdminViewModel({
     ClassRepository? classRepository,
@@ -18,11 +20,13 @@ class AdminViewModel extends ChangeNotifier {
     TeacherRepository? teacherRepository,
     AttendanceRepository? attendanceRepository,
     FeeRepository? feeRepository,
+    HomeworkRepository? homeworkRepository,
   })  : _classRepository = classRepository ?? ClassRepository(),
         _studentRepository = studentRepository ?? StudentRepository(),
         _teacherRepository = teacherRepository ?? TeacherRepository(),
         _attendanceRepository = attendanceRepository ?? AttendanceRepository(),
-        _feeRepository = feeRepository ?? FeeRepository();
+        _feeRepository = feeRepository ?? FeeRepository(),
+        _homeworkRepository = homeworkRepository ?? HomeworkRepository();
 
   int _totalStudents = 0;
   int get totalStudents => _totalStudents;
@@ -41,6 +45,9 @@ class AdminViewModel extends ChangeNotifier {
 
   int _todayAbsent = 0;
   int get todayAbsent => _todayAbsent;
+
+  int _totalHomework = 0;
+  int get totalHomework => _totalHomework;
 
   double get todayAttendancePercentage {
     final total = _todayPresent + _todayAbsent;
@@ -105,6 +112,13 @@ class AdminViewModel extends ChangeNotifier {
     } catch (_) {
       _todayPresent = 0;
       _todayAbsent = 0;
+    }
+
+    try {
+      final homeworkList = await _homeworkRepository.getAllHomework();
+      _totalHomework = homeworkList.length;
+    } catch (_) {
+      _totalHomework = 0;
     }
 
     _isLoading = false;

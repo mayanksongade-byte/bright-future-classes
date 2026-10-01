@@ -70,6 +70,11 @@ service cloud.firestore {
       allow read, create, update, delete: if isActiveAdmin();
     }
 
+    // Homework Collection: Active Admin can manage homework
+    match /homework/{homeworkId} {
+      allow read, create, update, delete: if isActiveAdmin();
+    }
+
     // Default deny for all other collections
     match /{document=**} {
       allow read, write: if false;

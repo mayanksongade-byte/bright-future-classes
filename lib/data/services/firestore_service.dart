@@ -208,4 +208,43 @@ class FirestoreService {
     final snapshot = await _firestore.collection('fee_payments').get();
     return snapshot.docs;
   }
+
+  // Homework Document Methods
+  String generateHomeworkId() {
+    return _firestore.collection('homework').doc().id;
+  }
+
+  Future<void> saveHomeworkDocument(
+      String homeworkId, Map<String, dynamic> data) async {
+    await _firestore
+        .collection('homework')
+        .doc(homeworkId)
+        .set(data, SetOptions(merge: true));
+  }
+
+  Future<void> updateHomeworkDocument(
+      String homeworkId, Map<String, dynamic> data) async {
+    await _firestore.collection('homework').doc(homeworkId).update(data);
+  }
+
+  Future<void> deleteHomeworkDocument(String homeworkId) async {
+    await _firestore.collection('homework').doc(homeworkId).delete();
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      getAllHomeworkDocuments() async {
+    final snapshot = await _firestore
+        .collection('homework')
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs;
+  }
+
+  Future<Map<String, dynamic>?> getHomeworkDocument(String homeworkId) async {
+    final doc = await _firestore.collection('homework').doc(homeworkId).get();
+    if (doc.exists) {
+      return doc.data();
+    }
+    return null;
+  }
 }
