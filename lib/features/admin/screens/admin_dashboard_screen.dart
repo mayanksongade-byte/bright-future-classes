@@ -8,11 +8,13 @@ import '../../complaints/screens/complaints_list_screen.dart';
 import '../../fees/screens/fees_screen.dart';
 import '../../homework/screens/homework_list_screen.dart';
 import '../../notices/screens/notices_list_screen.dart';
+import '../../reports/screens/reports_screen.dart';
 import '../../students/screens/add_student_screen.dart';
 import '../../students/screens/students_screen.dart';
 import '../../teachers/screens/add_teacher_screen.dart';
 import '../../teachers/screens/teachers_screen.dart';
 import '../../tests/screens/tests_list_screen.dart';
+import '../../notifications/widgets/notification_bell_widget.dart';
 import '../view_models/admin_view_model.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -90,6 +92,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
           ],
         ),
+        actions: const [
+          NotificationBellWidget(),
+          SizedBox(width: 8),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(
@@ -124,7 +130,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Continuous Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework, Total Notices, Total Complaints, Total Tests)
+                  // Continuous Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework, Total Notices, Total Complaints, Reports, Total Tests)
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final isWide = constraints.maxWidth > 600;
@@ -236,6 +242,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               await Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (context) => const ComplaintsListScreen(),
+                                ),
+                              );
+                              _viewModel.loadDashboardData();
+                            },
+                          ),
+                          _buildStatCard(
+                            title: 'Reports & Analytics',
+                            value: 'Analytics',
+                            icon: Icons.bar_chart_rounded,
+                            iconColor: AppColors.primaryEmerald,
+                            bgColor: AppColors.lightEmerald,
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const ReportsScreen(),
                                 ),
                               );
                               _viewModel.loadDashboardData();

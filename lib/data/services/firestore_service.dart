@@ -376,4 +376,41 @@ class FirestoreService {
     }
     return null;
   }
+
+  // Notification Document Methods
+  String generateNotificationId() {
+    return _firestore.collection('notifications').doc().id;
+  }
+
+  Future<void> saveNotificationDocument(
+      String notificationId, Map<String, dynamic> data) async {
+    await _firestore
+        .collection('notifications')
+        .doc(notificationId)
+        .set(data, SetOptions(merge: true));
+  }
+
+  Future<void> deleteNotificationDocument(String notificationId) async {
+    await _firestore.collection('notifications').doc(notificationId).delete();
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      getNotificationsDocumentsForRecipient(String recipientId) async {
+    final snapshot = await _firestore
+        .collection('notifications')
+        .where('recipientId', isEqualTo: recipientId)
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs;
+  }
+
+  Future<Map<String, dynamic>?> getNotificationDocument(
+      String notificationId) async {
+    final doc =
+        await _firestore.collection('notifications').doc(notificationId).get();
+    if (doc.exists) {
+      return doc.data();
+    }
+    return null;
+  }
 }
