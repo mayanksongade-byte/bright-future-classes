@@ -88,6 +88,11 @@ service cloud.firestore {
       allow read, write: if isActiveAdmin();
     }
 
+    // Complaints Collection: Active Admin can manage complaints
+    match /complaints/{complaintId} {
+      allow read, write: if isActiveAdmin();
+    }
+
     // Default deny for all other collections
     match /{document=**} {
       allow read, write: if false;

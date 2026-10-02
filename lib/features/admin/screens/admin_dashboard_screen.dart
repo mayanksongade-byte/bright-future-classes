@@ -4,6 +4,7 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../attendance/screens/admin_attendance_screen.dart';
 import '../../classes/screens/add_class_screen.dart';
 import '../../classes/screens/classes_screen.dart';
+import '../../complaints/screens/complaints_list_screen.dart';
 import '../../fees/screens/fees_screen.dart';
 import '../../homework/screens/homework_list_screen.dart';
 import '../../notices/screens/notices_list_screen.dart';
@@ -123,7 +124,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Continuous Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework, Total Notices, Total Tests)
+                  // Continuous Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework, Total Notices, Total Complaints, Total Tests)
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final isWide = constraints.maxWidth > 600;
@@ -220,6 +221,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               await Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (context) => const NoticesListScreen(),
+                                ),
+                              );
+                              _viewModel.loadDashboardData();
+                            },
+                          ),
+                          _buildStatCard(
+                            title: 'Total Complaints',
+                            value: '${_viewModel.totalComplaints}',
+                            icon: Icons.report_gmailerrorred_rounded,
+                            iconColor: AppColors.error,
+                            bgColor: const Color(0xFFFEE2E2),
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const ComplaintsListScreen(),
                                 ),
                               );
                               _viewModel.loadDashboardData();

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../data/repositories/attendance_repository.dart';
 import '../../../data/repositories/class_repository.dart';
+import '../../../data/repositories/complaint_repository.dart';
 import '../../../data/repositories/fee_repository.dart';
 import '../../../data/repositories/homework_repository.dart';
 import '../../../data/repositories/notice_repository.dart';
@@ -16,6 +17,7 @@ class AdminViewModel extends ChangeNotifier {
   final FeeRepository _feeRepository;
   final HomeworkRepository _homeworkRepository;
   final NoticeRepository _noticeRepository;
+  final ComplaintRepository _complaintRepository;
   final TestRepository _testRepository;
 
   AdminViewModel({
@@ -26,6 +28,7 @@ class AdminViewModel extends ChangeNotifier {
     FeeRepository? feeRepository,
     HomeworkRepository? homeworkRepository,
     NoticeRepository? noticeRepository,
+    ComplaintRepository? complaintRepository,
     TestRepository? testRepository,
   })  : _classRepository = classRepository ?? ClassRepository(),
         _studentRepository = studentRepository ?? StudentRepository(),
@@ -34,6 +37,7 @@ class AdminViewModel extends ChangeNotifier {
         _feeRepository = feeRepository ?? FeeRepository(),
         _homeworkRepository = homeworkRepository ?? HomeworkRepository(),
         _noticeRepository = noticeRepository ?? NoticeRepository(),
+        _complaintRepository = complaintRepository ?? ComplaintRepository(),
         _testRepository = testRepository ?? TestRepository();
 
   int _totalStudents = 0;
@@ -59,6 +63,9 @@ class AdminViewModel extends ChangeNotifier {
 
   int _totalNotices = 0;
   int get totalNotices => _totalNotices;
+
+  int _totalComplaints = 0;
+  int get totalComplaints => _totalComplaints;
 
   int _totalTests = 0;
   int get totalTests => _totalTests;
@@ -140,6 +147,13 @@ class AdminViewModel extends ChangeNotifier {
       _totalNotices = noticesList.length;
     } catch (_) {
       _totalNotices = 0;
+    }
+
+    try {
+      final complaintsList = await _complaintRepository.getComplaints();
+      _totalComplaints = complaintsList.length;
+    } catch (_) {
+      _totalComplaints = 0;
     }
 
     try {

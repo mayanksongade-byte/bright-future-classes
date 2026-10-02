@@ -347,4 +347,33 @@ class FirestoreService {
     }
     return null;
   }
+
+  // Complaint Document Methods
+  String generateComplaintId() {
+    return _firestore.collection('complaints').doc().id;
+  }
+
+  Future<void> saveComplaintDocument(String complaintId, Map<String, dynamic> data) async {
+    await _firestore.collection('complaints').doc(complaintId).set(data, SetOptions(merge: true));
+  }
+
+  Future<void> deleteComplaintDocument(String complaintId) async {
+    await _firestore.collection('complaints').doc(complaintId).delete();
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllComplaintDocuments() async {
+    final snapshot = await _firestore
+        .collection('complaints')
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs;
+  }
+
+  Future<Map<String, dynamic>?> getComplaintDocument(String complaintId) async {
+    final doc = await _firestore.collection('complaints').doc(complaintId).get();
+    if (doc.exists) {
+      return doc.data();
+    }
+    return null;
+  }
 }
