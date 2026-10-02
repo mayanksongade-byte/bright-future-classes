@@ -3,6 +3,7 @@ import '../../../data/repositories/attendance_repository.dart';
 import '../../../data/repositories/class_repository.dart';
 import '../../../data/repositories/fee_repository.dart';
 import '../../../data/repositories/homework_repository.dart';
+import '../../../data/repositories/notice_repository.dart';
 import '../../../data/repositories/student_repository.dart';
 import '../../../data/repositories/teacher_repository.dart';
 import '../../../data/repositories/test_repository.dart';
@@ -14,6 +15,7 @@ class AdminViewModel extends ChangeNotifier {
   final AttendanceRepository _attendanceRepository;
   final FeeRepository _feeRepository;
   final HomeworkRepository _homeworkRepository;
+  final NoticeRepository _noticeRepository;
   final TestRepository _testRepository;
 
   AdminViewModel({
@@ -23,6 +25,7 @@ class AdminViewModel extends ChangeNotifier {
     AttendanceRepository? attendanceRepository,
     FeeRepository? feeRepository,
     HomeworkRepository? homeworkRepository,
+    NoticeRepository? noticeRepository,
     TestRepository? testRepository,
   })  : _classRepository = classRepository ?? ClassRepository(),
         _studentRepository = studentRepository ?? StudentRepository(),
@@ -30,6 +33,7 @@ class AdminViewModel extends ChangeNotifier {
         _attendanceRepository = attendanceRepository ?? AttendanceRepository(),
         _feeRepository = feeRepository ?? FeeRepository(),
         _homeworkRepository = homeworkRepository ?? HomeworkRepository(),
+        _noticeRepository = noticeRepository ?? NoticeRepository(),
         _testRepository = testRepository ?? TestRepository();
 
   int _totalStudents = 0;
@@ -52,6 +56,9 @@ class AdminViewModel extends ChangeNotifier {
 
   int _totalHomework = 0;
   int get totalHomework => _totalHomework;
+
+  int _totalNotices = 0;
+  int get totalNotices => _totalNotices;
 
   int _totalTests = 0;
   int get totalTests => _totalTests;
@@ -126,6 +133,13 @@ class AdminViewModel extends ChangeNotifier {
       _totalHomework = homeworkList.length;
     } catch (_) {
       _totalHomework = 0;
+    }
+
+    try {
+      final noticesList = await _noticeRepository.getNotices();
+      _totalNotices = noticesList.length;
+    } catch (_) {
+      _totalNotices = 0;
     }
 
     try {

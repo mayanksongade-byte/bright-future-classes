@@ -318,4 +318,33 @@ class FirestoreService {
     }
     await batch.commit();
   }
+
+  // Notice Document Methods
+  String generateNoticeId() {
+    return _firestore.collection('notices').doc().id;
+  }
+
+  Future<void> saveNoticeDocument(String noticeId, Map<String, dynamic> data) async {
+    await _firestore.collection('notices').doc(noticeId).set(data, SetOptions(merge: true));
+  }
+
+  Future<void> deleteNoticeDocument(String noticeId) async {
+    await _firestore.collection('notices').doc(noticeId).delete();
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllNoticeDocuments() async {
+    final snapshot = await _firestore
+        .collection('notices')
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs;
+  }
+
+  Future<Map<String, dynamic>?> getNoticeDocument(String noticeId) async {
+    final doc = await _firestore.collection('notices').doc(noticeId).get();
+    if (doc.exists) {
+      return doc.data();
+    }
+    return null;
+  }
 }

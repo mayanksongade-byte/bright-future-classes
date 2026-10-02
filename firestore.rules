@@ -83,6 +83,11 @@ service cloud.firestore {
       allow read, create, update, delete: if isActiveAdmin();
     }
 
+    // Notices Collection: Active Admin can manage notices
+    match /notices/{noticeId} {
+      allow read, write: if isActiveAdmin();
+    }
+
     // Default deny for all other collections
     match /{document=**} {
       allow read, write: if false;

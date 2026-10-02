@@ -6,6 +6,7 @@ import '../../classes/screens/add_class_screen.dart';
 import '../../classes/screens/classes_screen.dart';
 import '../../fees/screens/fees_screen.dart';
 import '../../homework/screens/homework_list_screen.dart';
+import '../../notices/screens/notices_list_screen.dart';
 import '../../students/screens/add_student_screen.dart';
 import '../../students/screens/students_screen.dart';
 import '../../teachers/screens/add_teacher_screen.dart';
@@ -122,7 +123,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Continuous 2-Column Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework, Total Tests)
+                  // Continuous Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework, Total Notices, Total Tests)
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final isWide = constraints.maxWidth > 600;
@@ -210,6 +211,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             },
                           ),
                           _buildStatCard(
+                            title: 'Total Notices',
+                            value: '${_viewModel.totalNotices}',
+                            icon: Icons.notifications_active_outlined,
+                            iconColor: AppColors.primaryEmerald,
+                            bgColor: AppColors.lightEmerald,
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const NoticesListScreen(),
+                                ),
+                              );
+                              _viewModel.loadDashboardData();
+                            },
+                          ),
+                          _buildStatCard(
                             title: 'Total Tests',
                             value: '${_viewModel.totalTests}',
                             icon: Icons.quiz_outlined,
@@ -230,7 +246,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // 2. ATTENDANCE SECTION (Fully responsive full-width horizontal card with live summary)
+                  // 2. ATTENDANCE SECTION
                   const Text(
                     'Attendance',
                     style: TextStyle(
@@ -340,7 +356,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // 3. QUICK ACTIONS SECTION (Exactly 3 actions in ONE SINGLE ROW)
+                  // 3. QUICK ACTIONS SECTION
                   const Text(
                     'Quick Actions',
                     style: TextStyle(
@@ -590,7 +606,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Text(
             'No recent activity',
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 15,
               fontWeight: FontWeight.w500,
               color: AppColors.textSecondary,
             ),
