@@ -5,6 +5,7 @@ import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../data/models/student_model.dart';
 import '../view_models/students_view_model.dart';
 import 'add_student_screen.dart';
+import 'student_details_screen.dart';
 
 class StudentsScreen extends StatefulWidget {
   const StudentsScreen({super.key});
@@ -41,6 +42,18 @@ class _StudentsScreenState extends State<StudentsScreen> {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => const AddStudentScreen(),
+      ),
+    );
+
+    if (result == true && mounted) {
+      _viewModel.fetchStudents();
+    }
+  }
+
+  Future<void> _navigateToStudentDetails(StudentModel student) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => StudentDetailsScreen(student: student),
       ),
     );
 
@@ -366,165 +379,172 @@ class _StudentsScreenState extends State<StudentsScreen> {
   Widget _buildStudentCard(StudentModel student) {
     final bool isActive = student.status.toLowerCase() == 'active';
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _navigateToStudentDetails(student),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.lightEmerald,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.person_outline_rounded,
-                        color: AppColors.primaryEmerald,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            student.name,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textMain,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'ID: ${student.studentId}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? AppColors.lightEmerald
-                      : AppColors.border.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  isActive ? 'Active' : 'Inactive',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isActive
-                        ? AppColors.darkEmerald
-                        : AppColors.textSecondary,
-                  ),
-                ),
-              ),
-              PopupMenuButton<String>(
-                icon: const Icon(
-                  Icons.more_vert_rounded,
-                  color: AppColors.textSecondary,
-                  size: 20,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                onSelected: (value) {
-                  if (value == 'edit') {
-                    _navigateToEditStudent(student);
-                  } else if (value == 'delete') {
-                    _confirmDelete(student);
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'edit',
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
                     child: Row(
                       children: [
-                        Icon(Icons.edit_outlined,
-                            size: 18, color: AppColors.primaryEmerald),
-                        SizedBox(width: 8),
-                        Text('Edit Student'),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.lightEmerald,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.person_outline_rounded,
+                            color: AppColors.primaryEmerald,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                student.name,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textMain,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'ID: ${student.studentId}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline_rounded,
-                            size: 18, color: AppColors.error),
-                        SizedBox(width: 8),
-                        Text('Delete Student',
-                            style: TextStyle(color: AppColors.error)),
-                      ],
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? AppColors.lightEmerald
+                          : AppColors.border.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      isActive ? 'Active' : 'Inactive',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isActive
+                            ? AppColors.darkEmerald
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(
+                      Icons.more_vert_rounded,
+                      color: AppColors.textSecondary,
+                      size: 20,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        _navigateToEditStudent(student);
+                      } else if (value == 'delete') {
+                        _confirmDelete(student);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_outlined,
+                                size: 18, color: AppColors.primaryEmerald),
+                            SizedBox(width: 8),
+                            Text('Edit Student'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline_rounded,
+                                size: 18, color: AppColors.error),
+                            SizedBox(width: 8),
+                            Text('Delete Student',
+                                style: TextStyle(color: AppColors.error)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildDetailTile(
+                      label: 'Phone',
+                      value: student.phone,
+                      icon: Icons.phone_outlined,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildDetailTile(
+                      label: 'Parent Name',
+                      value: student.parentName,
+                      icon: Icons.family_restroom_outlined,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildDetailTile(
+                      label: 'Parent Phone',
+                      value: student.parentPhone,
+                      icon: Icons.contact_phone_outlined,
                     ),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          const Divider(height: 1, color: AppColors.border),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _buildDetailTile(
-                  label: 'Phone',
-                  value: student.phone,
-                  icon: Icons.phone_outlined,
-                ),
-              ),
-              Expanded(
-                child: _buildDetailTile(
-                  label: 'Parent Name',
-                  value: student.parentName,
-                  icon: Icons.family_restroom_outlined,
-                ),
-              ),
-              Expanded(
-                child: _buildDetailTile(
-                  label: 'Parent Phone',
-                  value: student.parentPhone,
-                  icon: Icons.contact_phone_outlined,
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

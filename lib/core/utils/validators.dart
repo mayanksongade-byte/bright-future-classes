@@ -68,4 +68,31 @@ class Validators {
     }
     return null;
   }
+
+  static String? validateTeacherPassword(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter login password';
+    }
+    if (value.trim().length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+    return null;
+  }
+
+  static String? validateLoginUserId(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter Login User ID';
+    }
+    final trimmed = value.trim();
+    if (trimmed.length < 3) {
+      return 'User ID must be at least 3 characters';
+    }
+    if (trimmed.length > 20) {
+      return 'User ID cannot exceed 20 characters';
+    }
+    if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(trimmed)) {
+      return 'User ID can only contain letters, numbers, _ and - (no spaces)';
+    }
+    return null;
+  }
 }

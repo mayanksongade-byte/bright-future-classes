@@ -5,6 +5,7 @@ import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../admin/screens/admin_dashboard_screen.dart';
+import '../../teacher/screens/teacher_dashboard_screen.dart';
 import '../view_models/auth_view_model.dart';
 
 class LoginForm extends StatefulWidget {
@@ -49,17 +50,25 @@ class _LoginFormState extends State<LoginForm> {
     FocusScope.of(context).unfocus();
 
     if (_formKey.currentState?.validate() ?? false) {
-      final email = _userIdController.text.trim();
+      final emailOrUserId = _userIdController.text.trim();
       final password = _passwordController.text;
 
-      final success = await _authViewModel.loginWithEmail(email, password);
+      final success = await _authViewModel.loginWithEmail(emailOrUserId, password);
 
       if (!mounted) return;
 
       if (success) {
+        final role = _authViewModel.userModel?.role.toLowerCase();
+        Widget destination;
+        if (role == 'teacher') {
+          destination = const TeacherDashboardScreen();
+        } else {
+          destination = const AdminDashboardScreen();
+        }
+
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
-            builder: (context) => const AdminDashboardScreen(),
+            builder: (context) => destination,
           ),
           (route) => false,
         );

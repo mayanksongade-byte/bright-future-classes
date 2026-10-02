@@ -5,6 +5,7 @@ import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../data/models/teacher_model.dart';
 import '../view_models/teachers_view_model.dart';
 import 'add_teacher_screen.dart';
+import 'teacher_details_screen.dart';
 
 class TeachersScreen extends StatefulWidget {
   const TeachersScreen({super.key});
@@ -41,6 +42,18 @@ class _TeachersScreenState extends State<TeachersScreen> {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => const AddTeacherScreen(),
+      ),
+    );
+
+    if (result == true && mounted) {
+      _viewModel.fetchTeachers();
+    }
+  }
+
+  Future<void> _navigateToTeacherDetails(TeacherModel teacher) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => TeacherDetailsScreen(teacher: teacher),
       ),
     );
 
@@ -366,162 +379,187 @@ class _TeachersScreenState extends State<TeachersScreen> {
   Widget _buildTeacherCard(TeacherModel teacher) {
     final bool isActive = teacher.status.toLowerCase() == 'active';
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _navigateToTeacherDetails(teacher),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF3E8FF),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.badge_outlined,
-                        color: AppColors.teacherAccent,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            teacher.name,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textMain,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            teacher.email,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? AppColors.lightEmerald
-                      : AppColors.border.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  isActive ? 'Active' : 'Inactive',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isActive
-                        ? AppColors.darkEmerald
-                        : AppColors.textSecondary,
-                  ),
-                ),
-              ),
-              PopupMenuButton<String>(
-                icon: const Icon(
-                  Icons.more_vert_rounded,
-                  color: AppColors.textSecondary,
-                  size: 20,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                onSelected: (value) {
-                  if (value == 'edit') {
-                    _navigateToEditTeacher(teacher);
-                  } else if (value == 'delete') {
-                    _confirmDelete(teacher);
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'edit',
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
                     child: Row(
                       children: [
-                        Icon(Icons.edit_outlined,
-                            size: 18, color: AppColors.primaryEmerald),
-                        SizedBox(width: 8),
-                        Text('Edit Teacher'),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3E8FF),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.badge_outlined,
+                            color: AppColors.teacherAccent,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                teacher.name,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textMain,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (teacher.userId != null &&
+                                  teacher.userId!.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  'User ID: ${teacher.userId}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primaryEmerald,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                              const SizedBox(height: 2),
+                              Text(
+                                teacher.email,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline_rounded,
-                            size: 18, color: AppColors.error),
-                        SizedBox(width: 8),
-                        Text('Delete Teacher',
-                            style: TextStyle(color: AppColors.error)),
-                      ],
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? AppColors.lightEmerald
+                          : AppColors.border.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      isActive ? 'Active' : 'Inactive',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isActive
+                            ? AppColors.darkEmerald
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(
+                      Icons.more_vert_rounded,
+                      color: AppColors.textSecondary,
+                      size: 20,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        _navigateToEditStudent(teacher);
+                      } else if (value == 'delete') {
+                        _confirmDelete(teacher);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_outlined,
+                                size: 18, color: AppColors.primaryEmerald),
+                            SizedBox(width: 8),
+                            Text('Edit Teacher'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline_rounded,
+                                size: 18, color: AppColors.error),
+                            SizedBox(width: 8),
+                            Text('Delete Teacher',
+                                style: TextStyle(color: AppColors.error)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildDetailTile(
+                      label: 'Phone',
+                      value: teacher.phone,
+                      icon: Icons.phone_outlined,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildDetailTile(
+                      label: 'Assigned Classes',
+                      value: '${teacher.classIds.length} Classes',
+                      icon: Icons.school_outlined,
                     ),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          const Divider(height: 1, color: AppColors.border),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _buildDetailTile(
-                  label: 'Phone',
-                  value: teacher.phone,
-                  icon: Icons.phone_outlined,
-                ),
-              ),
-              Expanded(
-                child: _buildDetailTile(
-                  label: 'Assigned Classes',
-                  value: '${teacher.classIds.length} Classes',
-                  icon: Icons.school_outlined,
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
+  }
+
+  void _navigateToEditStudent(TeacherModel teacher) {
+    _navigateToEditTeacher(teacher);
   }
 
   Widget _buildDetailTile({

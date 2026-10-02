@@ -9,6 +9,7 @@ import '../../fees/screens/fees_screen.dart';
 import '../../homework/screens/homework_list_screen.dart';
 import '../../notices/screens/notices_list_screen.dart';
 import '../../reports/screens/reports_screen.dart';
+import '../../settings/screens/settings_screen.dart';
 import '../../students/screens/add_student_screen.dart';
 import '../../students/screens/students_screen.dart';
 import '../../teachers/screens/add_teacher_screen.dart';
@@ -130,7 +131,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Continuous Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework, Total Notices, Total Complaints, Reports, Total Tests)
+                  // Continuous Grid (Total Students, Total Teachers, Total Classes, Pending Fees, Total Homework, Total Notices, Total Complaints, Reports, Settings, Total Tests)
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final isWide = constraints.maxWidth > 600;
@@ -257,6 +258,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               await Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (context) => const ReportsScreen(),
+                                ),
+                              );
+                              _viewModel.loadDashboardData();
+                            },
+                          ),
+                          _buildStatCard(
+                            title: 'Settings',
+                            value: 'Config',
+                            icon: Icons.settings_outlined,
+                            iconColor: AppColors.textSecondary,
+                            bgColor: AppColors.border,
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const SettingsScreen(),
                                 ),
                               );
                               _viewModel.loadDashboardData();

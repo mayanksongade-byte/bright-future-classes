@@ -21,7 +21,7 @@ class AuthViewModel extends ChangeNotifier {
   UserModel? _userModel;
   UserModel? get userModel => _userModel;
 
-  Future<bool> loginWithEmail(String email, String password) async {
+  Future<bool> loginWithEmail(String emailOrUserId, String password) async {
     if (_isLoading) return false;
 
     _isLoading = true;
@@ -30,14 +30,14 @@ class AuthViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _userCredential = await _authRepository.loginWithEmail(
-        email: email.trim(),
+      _userCredential = await _authRepository.loginWithEmailOrUserId(
+        loginInput: emailOrUserId.trim(),
         password: password.trim(),
       );
 
       final uid = _userCredential?.user?.uid;
       if (uid == null || uid.isEmpty) {
-        _errorMessage = 'Authentication failed. Invalid user ID.';
+        _errorMessage = 'Authentication failed. Invalid user session.';
         _isLoading = false;
         notifyListeners();
         return false;
@@ -56,13 +56,6 @@ class AuthViewModel extends ChangeNotifier {
       if (!userProfile.isActive) {
         _errorMessage =
             'Your account is inactive. Please contact the administrator.';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-
-      if (userProfile.role.toLowerCase() != 'admin') {
-        _errorMessage = 'This account is not configured for Admin access.';
         _isLoading = false;
         notifyListeners();
         return false;

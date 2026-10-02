@@ -25,9 +25,12 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
+  final _userIdController = TextEditingController();
+  final _passwordController = TextEditingController();
 
   Set<String> _selectedClassIds = {};
   String _selectedStatus = 'active';
+  bool _isPasswordObscured = true;
 
   late final TeachersViewModel _viewModel;
   late final ClassRepository _classRepository;
@@ -48,6 +51,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       _emailController.text = t.email;
       _phoneController.text = t.phone;
       _addressController.text = t.address;
+      _userIdController.text = t.userId ?? '';
       _selectedStatus = t.status;
       _selectedClassIds = t.classIds.toSet();
     }
@@ -90,6 +94,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     _emailController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
+    _userIdController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -133,6 +139,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         phone: _phoneController.text.trim(),
         address: _addressController.text.trim(),
         classIds: _selectedClassIds.toList(),
+        loginUserId: _userIdController.text.trim().toUpperCase(),
+        password: _passwordController.text.trim(),
         status: _selectedStatus,
       );
     }
@@ -392,9 +400,90 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                         ),
                       ],
                     ),
+
+                    // SECTION 2 — LOGIN CREDENTIALS
+                    const SizedBox(height: 28),
+                    const Text(
+                      'Login Credentials',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMain,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isEditing
+                          ? 'Teacher login account identifier.'
+                          : 'Set a unique Login User ID and password for the teacher.',
+                      style: AppTextStyles.subtitle,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Login User ID
+                    if (isEditing)
+                      AppTextField(
+                        label: 'Login User ID',
+                        hintText: 'N/A',
+                        controller: TextEditingController(
+                          text: widget.teacherToEdit?.userId ?? 'N/A',
+                        ),
+                        readOnly: true,
+                        enabled: false,
+                        prefixIcon: const Icon(
+                          Icons.badge_outlined,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
+                      )
+                    else ...[
+                      AppTextField(
+                        label: 'Login User ID',
+                        hintText: 'e.g. TCH001',
+                        controller: _userIdController,
+                        validator: Validators.validateLoginUserId,
+                        textCapitalization: TextCapitalization.characters,
+                        textInputAction: TextInputAction.next,
+                        prefixIcon: const Icon(
+                          Icons.badge_outlined,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Login Password
+                      AppTextField(
+                        label: 'Login Password',
+                        hintText: 'Minimum 6 characters',
+                        controller: _passwordController,
+                        obscureText: _isPasswordObscured,
+                        validator: Validators.validateTeacherPassword,
+                        textInputAction: TextInputAction.next,
+                        prefixIcon: const Icon(
+                          Icons.lock_outline_rounded,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _isPasswordObscured
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            color: AppColors.textSecondary,
+                            size: 20,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isPasswordObscured = !_isPasswordObscured;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 28),
 
-                    // SECTION 2 — TEACHING INFORMATION
+                    // SECTION 3 — TEACHING INFORMATION
                     const Text(
                       'Teaching Information',
                       style: TextStyle(

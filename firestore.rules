@@ -29,10 +29,20 @@ service cloud.firestore {
         );
     }
 
-    // Users Collection: Authenticated user can read only their own user document; writes blocked
+    // Login IDs Collection: Allow exact document 'get' for authentication lookup; NO listing; Active Admin can manage
+    match /login_ids/{userId} {
+      allow get: if true;
+      allow list: if false;
+
+      allow create, update: if isActiveAdmin();
+      allow delete: if isActiveAdmin();
+    }
+
+    // Users Collection: Authenticated user can read own document or active admin can read/write
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if false;
+      allow read: if request.auth != null && (request.auth.uid == userId || isActiveAdmin());
+      allow create, update: if isActiveAdmin();
+      allow delete: if isActiveAdmin();
     }
 
     // Students Collection: Authenticated users can read; Active Admin can create, read, update, delete
@@ -90,6 +100,11 @@ service cloud.firestore {
 
     // Complaints Collection: Active Admin can manage complaints
     match /complaints/{complaintId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    // Settings Collection: Active Admin can read/write global institute settings
+    match /settings/app {
       allow read, write: if isActiveAdmin();
     }
 

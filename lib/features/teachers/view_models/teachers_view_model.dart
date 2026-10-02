@@ -47,6 +47,8 @@ class TeachersViewModel extends ChangeNotifier {
     required String phone,
     required String address,
     required List<String> classIds,
+    required String loginUserId,
+    required String password,
     String status = 'active',
   }) async {
     if (_isActionLoading) return false;
@@ -68,7 +70,11 @@ class TeachersViewModel extends ChangeNotifier {
         status: status,
       );
 
-      await _teacherRepository.createTeacher(teacher);
+      await _teacherRepository.createTeacher(
+        teacher: teacher,
+        loginUserId: loginUserId,
+        password: password,
+      );
 
       _successMessage = 'Teacher profile created successfully';
       _isActionLoading = false;
