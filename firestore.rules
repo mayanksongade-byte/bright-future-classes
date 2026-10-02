@@ -93,6 +93,11 @@ service cloud.firestore {
       allow read, write: if isActiveAdmin();
     }
 
+    // Settings Collection: Active Admin can read/write global institute settings
+    match /settings/app {
+      allow read, write: if isActiveAdmin();
+    }
+
     // Default deny for all other collections
     match /{document=**} {
       allow read, write: if false;

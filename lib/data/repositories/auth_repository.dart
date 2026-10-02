@@ -44,6 +44,14 @@ class AuthRepository {
     }
   }
 
+  Future<void> signOut() async {
+    try {
+      await _authService.signOut();
+    } catch (e) {
+      throw Exception('Failed to sign out. Please try again.');
+    }
+  }
+
   String _handleFirebaseAuthException(FirebaseAuthException e) {
     switch (e.code) {
       case 'invalid-credential':

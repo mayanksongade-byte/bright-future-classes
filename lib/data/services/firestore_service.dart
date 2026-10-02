@@ -413,4 +413,21 @@ class FirestoreService {
     }
     return null;
   }
+
+  // Settings & Profile Document Methods
+  Future<Map<String, dynamic>?> getInstituteSettingsDocument() async {
+    final doc = await _firestore.collection('settings').doc('app').get();
+    if (doc.exists) {
+      return doc.data();
+    }
+    return null;
+  }
+
+  Future<void> saveInstituteSettingsDocument(Map<String, dynamic> data) async {
+    await _firestore.collection('settings').doc('app').set(data, SetOptions(merge: true));
+  }
+
+  Future<void> updateUserProfileDocument(String uid, Map<String, dynamic> data) async {
+    await _firestore.collection('users').doc(uid).set(data, SetOptions(merge: true));
+  }
 }
