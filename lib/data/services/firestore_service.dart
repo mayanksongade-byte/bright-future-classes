@@ -18,91 +18,6 @@ class FirestoreService {
     return null;
   }
 
-  Future<Map<String, dynamic>?> getTeacherDocument(String teacherId) async {
-    final docSnapshot = await _firestore.collection('teachers').doc(teacherId).get();
-    if (docSnapshot.exists) {
-      return docSnapshot.data();
-    }
-    return null;
-  }
-
-  Future<Map<String, dynamic>?> getClassDocument(String classId) async {
-    final docSnapshot = await _firestore.collection('classes').doc(classId).get();
-    if (docSnapshot.exists) {
-      return docSnapshot.data();
-    }
-    return null;
-  }
-
-  // Login ID Mapping Methods
-  Future<Map<String, dynamic>?> getLoginIdDocument(String userId) async {
-    final formatted = userId.trim().toUpperCase();
-    final docSnapshot =
-        await _firestore.collection('login_ids').doc(formatted).get();
-    if (docSnapshot.exists) {
-      return docSnapshot.data();
-    }
-    return null;
-  }
-
-  Future<bool> checkLoginIdExists(String userId) async {
-    final formatted = userId.trim().toUpperCase();
-    final docSnapshot =
-        await _firestore.collection('login_ids').doc(formatted).get();
-    return docSnapshot.exists;
-  }
-
-  Future<void> saveLoginIdDocument(
-      String userId, Map<String, dynamic> data) async {
-    final formatted = userId.trim().toUpperCase();
-    await _firestore
-        .collection('login_ids')
-        .doc(formatted)
-        .set(data, SetOptions(merge: true));
-  }
-
-  Future<bool> checkUserIdExists(String userId) async {
-    final formatted = userId.trim().toUpperCase();
-    // 1. Check login_ids collection via direct doc fetch
-    final loginIdDoc =
-        await _firestore.collection('login_ids').doc(formatted).get();
-    if (loginIdDoc.exists) return true;
-
-    // 2. Fallback check in users collection if Admin is authenticated
-    try {
-      final querySnapshot = await _firestore
-          .collection('users')
-          .where('userId', isEqualTo: formatted)
-          .limit(1)
-          .get();
-      return querySnapshot.docs.isNotEmpty;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<Map<String, dynamic>?> getUserByUserId(String userId) async {
-    final formatted = userId.trim().toUpperCase();
-    final loginData = await getLoginIdDocument(formatted);
-    if (loginData != null) {
-      return loginData;
-    }
-    try {
-      final querySnapshot = await _firestore
-          .collection('users')
-          .where('userId', isEqualTo: formatted)
-          .limit(1)
-          .get();
-      if (querySnapshot.docs.isNotEmpty) {
-        final doc = querySnapshot.docs.first;
-        final data = Map<String, dynamic>.from(doc.data());
-        data['uid'] = doc.id;
-        return data;
-      }
-    } catch (_) {}
-    return null;
-  }
-
   // Student Document Methods
   Future<void> saveStudentDocument(
       String studentId, Map<String, dynamic> data) async {
@@ -121,22 +36,9 @@ class FirestoreService {
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getStudentsDocuments() async {
-    try {
-      final snapshot = await _firestore
-          .collection('students')
-          .orderBy('createdAt', descending: true)
-          .get();
-      return snapshot.docs;
-    } catch (_) {
-      final snapshot = await _firestore.collection('students').get();
-      return snapshot.docs;
-    }
-  }
-
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getStudentsDocumentsByClassId(String classId) async {
     final snapshot = await _firestore
         .collection('students')
-        .where('classId', isEqualTo: classId)
+        .orderBy('createdAt', descending: true)
         .get();
     return snapshot.docs;
   }
@@ -161,28 +63,11 @@ class FirestoreService {
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getTeachersDocuments() async {
-    try {
-      final snapshot = await _firestore
-          .collection('teachers')
-          .orderBy('createdAt', descending: true)
-          .get();
-      return snapshot.docs;
-    } catch (_) {
-      final snapshot = await _firestore.collection('teachers').get();
-      return snapshot.docs;
-    }
-  }
-
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getTeacherDocumentsByClassId(String classId) async {
-    try {
-      final snapshot = await _firestore
-          .collection('teachers')
-          .where('classIds', arrayContains: classId)
-          .get();
-      return snapshot.docs;
-    } catch (_) {
-      return [];
-    }
+    final snapshot = await _firestore
+        .collection('teachers')
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs;
   }
 
   Future<void> updateTeacherDocument(
@@ -214,16 +99,11 @@ class FirestoreService {
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getClassesDocuments() async {
-    try {
-      final snapshot = await _firestore
-          .collection('classes')
-          .orderBy('createdAt', descending: true)
-          .get();
-      return snapshot.docs;
-    } catch (_) {
-      final snapshot = await _firestore.collection('classes').get();
-      return snapshot.docs;
-    }
+    final snapshot = await _firestore
+        .collection('classes')
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs;
   }
 
   Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> streamClassesDocuments() {
@@ -393,14 +273,6 @@ class FirestoreService {
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getTestDocumentsForClass(String classId) async {
-    final snapshot = await _firestore
-        .collection('tests')
-        .where('classId', isEqualTo: classId)
-        .get();
-    return snapshot.docs;
-  }
-
   Future<Map<String, dynamic>?> getTestDocument(String testId) async {
     final doc = await _firestore.collection('tests').doc(testId).get();
     if (doc.exists) {
@@ -497,14 +369,6 @@ class FirestoreService {
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getComplaintDocumentsForStudent(String studentId) async {
-    final snapshot = await _firestore
-        .collection('complaints')
-        .where('studentId', isEqualTo: studentId)
-        .get();
-    return snapshot.docs;
-  }
-
   Future<Map<String, dynamic>?> getComplaintDocument(String complaintId) async {
     final doc = await _firestore.collection('complaints').doc(complaintId).get();
     if (doc.exists) {
@@ -548,26 +412,5 @@ class FirestoreService {
       return doc.data();
     }
     return null;
-  }
-
-  // Settings & Profile Document Methods
-  Future<Map<String, dynamic>?> getInstituteSettingsDocument() async {
-    final doc = await _firestore.collection('settings').doc('app').get();
-    if (doc.exists) {
-      return doc.data();
-    }
-    return null;
-  }
-
-  Future<void> saveInstituteSettingsDocument(Map<String, dynamic> data) async {
-    await _firestore.collection('settings').doc('app').set(data, SetOptions(merge: true));
-  }
-
-  Future<void> saveUserDocument(String uid, Map<String, dynamic> data) async {
-    await _firestore.collection('users').doc(uid).set(data, SetOptions(merge: true));
-  }
-
-  Future<void> updateUserProfileDocument(String uid, Map<String, dynamic> data) async {
-    await _firestore.collection('users').doc(uid).set(data, SetOptions(merge: true));
   }
 }
