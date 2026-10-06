@@ -30,7 +30,19 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
 
   Set<String> _selectedClassIds = {};
   String _selectedStatus = 'active';
+  String _selectedSubject = 'Mathematics';
   bool _isPasswordObscured = true;
+
+  final List<String> _subjectOptions = [
+    'Mathematics',
+    'Science',
+    'English',
+    'Computer',
+    'Social Science',
+    'Gujarati',
+    'Hindi',
+    'Other',
+  ];
 
   late final TeachersViewModel _viewModel;
   late final ClassRepository _classRepository;
@@ -51,6 +63,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       _emailController.text = t.email;
       _phoneController.text = t.phone;
       _addressController.text = t.address;
+      if (_subjectOptions.contains(t.subject)) {
+        _selectedSubject = t.subject;
+      } else if (t.subject.isNotEmpty) {
+        _selectedSubject = t.subject;
+      }
       _userIdController.text = t.userId ?? '';
       _selectedStatus = t.status;
       _selectedClassIds = t.classIds.toSet();
@@ -128,6 +145,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
         address: _addressController.text.trim(),
+        subject: _selectedSubject,
         classIds: _selectedClassIds.toList(),
         status: _selectedStatus,
         createdAt: widget.teacherToEdit!.createdAt,
@@ -138,6 +156,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
         address: _addressController.text.trim(),
+        subject: _selectedSubject,
         classIds: _selectedClassIds.toList(),
         loginUserId: _userIdController.text.trim().toUpperCase(),
         password: _passwordController.text.trim(),
@@ -334,6 +353,67 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                         color: AppColors.textSecondary,
                         size: 20,
                       ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Subject Dropdown
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Subject',
+                          style: AppTextStyles.inputLabel,
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          initialValue: _selectedSubject,
+                          style: AppTextStyles.inputText,
+                          icon: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: AppColors.textSecondary,
+                          ),
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: AppColors.surface,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.book_outlined,
+                              color: AppColors.textSecondary,
+                              size: 20,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: AppColors.border,
+                                width: 1,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: AppColors.primaryEmerald,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                          items: _subjectOptions.map((subj) {
+                            return DropdownMenuItem(
+                              value: subj,
+                              child: Text(subj),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() {
+                                _selectedSubject = value;
+                              });
+                            }
+                          },
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 16),
 
@@ -573,9 +653,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                                       itemCount: _availableClasses.length,
                                       separatorBuilder: (context, index) =>
                                           const Divider(
-                                        height: 1,
-                                        color: AppColors.border,
-                                      ),
+                                            height: 1,
+                                            color: AppColors.border,
+                                          ),
                                       itemBuilder: (context, index) {
                                         final cls = _availableClasses[index];
                                         final isSelected =
@@ -618,7 +698,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                                   ),
                       ],
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 28),
 
                     // Submit Button
                     PrimaryButton(

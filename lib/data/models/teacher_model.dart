@@ -6,6 +6,7 @@ class TeacherModel {
   final String email;
   final String phone;
   final String address;
+  final String subject;
   final List<String> classIds;
   final String status;
   final String? userId;
@@ -18,6 +19,7 @@ class TeacherModel {
     required this.email,
     required this.phone,
     this.address = '',
+    this.subject = 'Mathematics',
     required this.classIds,
     this.status = 'active',
     this.userId,
@@ -54,6 +56,7 @@ class TeacherModel {
       email: map['email'] as String? ?? '',
       phone: map['phone'] as String? ?? '',
       address: map['address'] as String? ?? '',
+      subject: map['subject'] as String? ?? 'Mathematics',
       classIds: parsedClassIds,
       status: map['status'] as String? ?? 'active',
       userId: map['userId'] as String?,
@@ -69,6 +72,7 @@ class TeacherModel {
       'email': email,
       'phone': phone,
       'address': address,
+      'subject': subject,
       'classIds': classIds.toSet().toList(),
       'status': status,
       'userId': userId,
@@ -85,6 +89,7 @@ class TeacherModel {
     String? email,
     String? phone,
     String? address,
+    String? subject,
     List<String>? classIds,
     String? status,
     String? userId,
@@ -97,6 +102,7 @@ class TeacherModel {
       email: email ?? this.email,
       phone: phone ?? this.phone,
       address: address ?? this.address,
+      subject: subject ?? this.subject,
       classIds: classIds != null ? classIds.toSet().toList() : this.classIds,
       status: status ?? this.status,
       userId: userId ?? this.userId,

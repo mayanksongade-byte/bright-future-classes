@@ -13,10 +13,9 @@ service cloud.firestore {
     function isAssignedTeacher(classId) {
       return request.auth != null
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "teacher"
-        && (
-          exists(/databases/$(database)/documents/teachers/$(request.auth.uid))
-          && classId in get(/databases/$(database)/documents/teachers/$(request.auth.uid)).data.get('classIds', [])
-        );
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teacherId != null
+        && classId in get(/databases/$(database)/documents/teachers/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teacherId)).data.get('classIds', []);
     }
 
     // Helper function: Check if requesting user is the student owner
@@ -45,21 +44,31 @@ service cloud.firestore {
       allow delete: if isActiveAdmin();
     }
 
-    // Students Collection: Authenticated users can read; Active Admin can create, read, update, delete
+    // Students Collection: Authenticated users can read if assigned teacher or admin
     match /students/{studentId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && (
+        isActiveAdmin()
+        || (resource != null && isAssignedTeacher(resource.data.classId))
+        || (request.resource != null && isAssignedTeacher(request.resource.data.classId))
+      );
       allow create, update, delete: if isActiveAdmin();
     }
 
-    // Classes Collection: Authenticated users can read; Active Admin can create, read, update, delete
+    // Classes Collection: Authenticated users can read if assigned teacher or admin
     match /classes/{classId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && (
+        isActiveAdmin()
+        || isAssignedTeacher(classId)
+      );
       allow create, update, delete: if isActiveAdmin();
     }
 
-    // Teachers Collection: Authenticated users can read; Active Admin can create, read, update, delete
+    // Teachers Collection: Authenticated user can read own teacher profile or admin can manage
     match /teachers/{teacherId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && (
+        isActiveAdmin()
+        || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teacherId == teacherId)
+      );
       allow create, update, delete: if isActiveAdmin();
     }
 
@@ -85,12 +94,22 @@ service cloud.firestore {
       allow read, create, update, delete: if isActiveAdmin();
     }
 
-    // Tests & Marks Collections: Active Admin can manage tests and marks
+    // Tests & Marks Collections: Active Admin can manage tests/marks; Assigned teachers can read
     match /tests/{testId} {
-      allow read, create, update, delete: if isActiveAdmin();
+      allow read: if request.auth != null && (
+        isActiveAdmin()
+        || (resource != null && isAssignedTeacher(resource.data.classId))
+        || (request.resource != null && isAssignedTeacher(request.resource.data.classId))
+      );
+      allow create, update, delete: if isActiveAdmin();
     }
     match /marks/{markId} {
-      allow read, create, update, delete: if isActiveAdmin();
+      allow read: if request.auth != null && (
+        isActiveAdmin()
+        || (resource != null && isAssignedTeacher(resource.data.classId))
+        || (request.resource != null && isAssignedTeacher(request.resource.data.classId))
+      );
+      allow create, update, delete: if isActiveAdmin();
     }
 
     // Notices Collection: Active Admin can manage notices
@@ -98,9 +117,13 @@ service cloud.firestore {
       allow read, write: if isActiveAdmin();
     }
 
-    // Complaints Collection: Active Admin can manage complaints
+    // Complaints Collection: Active Admin can manage complaints; Assigned teachers can read
     match /complaints/{complaintId} {
-      allow read, write: if isActiveAdmin();
+      allow read: if request.auth != null && (
+        isActiveAdmin()
+        || (resource != null && isAssignedTeacher(get(/databases/$(database)/documents/students/$(resource.data.studentId)).data.classId))
+      );
+      allow write: if isActiveAdmin();
     }
 
     // Settings Collection: Active Admin can read/write global institute settings

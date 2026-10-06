@@ -434,20 +434,17 @@ class _TeachersScreenState extends State<TeachersScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              if (teacher.userId != null &&
-                                  teacher.userId!.isNotEmpty) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  'User ID: ${teacher.userId}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.primaryEmerald,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                              const SizedBox(height: 2),
+                              Text(
+                                'Subject: ${teacher.subject}${teacher.userId != null && teacher.userId!.isNotEmpty ? ' • ID: ${teacher.userId}' : ''}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primaryEmerald,
                                 ),
-                              ],
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               const SizedBox(height: 2),
                               Text(
                                 teacher.email,
@@ -497,7 +494,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
                     ),
                     onSelected: (value) {
                       if (value == 'edit') {
-                        _navigateToEditStudent(teacher);
+                        _navigateToEditTeacher(teacher);
                       } else if (value == 'delete') {
                         _confirmDelete(teacher);
                       }
@@ -556,10 +553,6 @@ class _TeachersScreenState extends State<TeachersScreen> {
         ),
       ),
     );
-  }
-
-  void _navigateToEditStudent(TeacherModel teacher) {
-    _navigateToEditTeacher(teacher);
   }
 
   Widget _buildDetailTile({

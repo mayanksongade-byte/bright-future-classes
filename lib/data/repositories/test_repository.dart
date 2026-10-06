@@ -29,6 +29,11 @@ class TestRepository {
     return docs.map((doc) => TestModel.fromMap(doc.data(), doc.id)).toList();
   }
 
+  Future<List<TestModel>> getTestsForClass(String classId) async {
+    final docs = await _firestoreService.getTestDocumentsForClass(classId);
+    return docs.map((doc) => TestModel.fromMap(doc.data(), doc.id)).toList();
+  }
+
   Future<TestModel?> getTest(String testId) async {
     final data = await _firestoreService.getTestDocument(testId);
     if (data != null) {

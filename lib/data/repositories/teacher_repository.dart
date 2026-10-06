@@ -55,19 +55,31 @@ class TeacherRepository {
       await _firestoreService.saveLoginIdDocument(
           formattedUserId, loginMappingData);
 
-      // Ensure users/{existingUid} and teachers/{teacher.teacherId} contain userId = formattedUserId
+      // Ensure users/{existingUid} and teachers/{existingUid} contain userId = formattedUserId and teacherId = existingUid
       if (existingUid.isNotEmpty) {
         await _firestoreService.updateUserProfileDocument(existingUid, {
           'userId': formattedUserId,
+          'teacherId': existingUid,
           'isActive': true,
           'role': 'teacher',
         });
+        final teacherWithUserId = teacher.copyWith(
+          teacherId: existingUid,
+          userId: formattedUserId,
+        );
+        await _firestoreService.saveTeacherDocument(
+          existingUid,
+          teacherWithUserId.toMap(),
+        );
+      } else {
+        final teacherWithUserId = teacher.copyWith(
+          userId: formattedUserId,
+        );
+        await _firestoreService.saveTeacherDocument(
+          teacherWithUserId.teacherId,
+          teacherWithUserId.toMap(),
+        );
       }
-      final teacherWithUserId = teacher.copyWith(userId: formattedUserId);
-      await _firestoreService.saveTeacherDocument(
-        teacherWithUserId.teacherId,
-        teacherWithUserId.toMap(),
-      );
       return;
     }
 
@@ -116,6 +128,7 @@ class TeacherRepository {
       final userDocData = {
         'uid': createdAuthUid,
         'userId': formattedUserId,
+        'teacherId': createdAuthUid,
         'name': teacher.name,
         'email': teacher.email.trim(),
         'role': 'teacher',
@@ -140,10 +153,13 @@ class TeacherRepository {
         await _firestoreService.saveLoginIdDocument(
             formattedUserId, loginMappingData);
 
-        // 6. Create teachers/{teacherId}
-        final teacherWithUserId = teacher.copyWith(userId: formattedUserId);
+        // 6. Create teachers/{createdAuthUid} with teacherId = createdAuthUid and userId = formattedUserId
+        final teacherWithUserId = teacher.copyWith(
+          teacherId: createdAuthUid,
+          userId: formattedUserId,
+        );
         await _firestoreService.saveTeacherDocument(
-          teacherWithUserId.teacherId,
+          createdAuthUid,
           teacherWithUserId.toMap(),
         );
       } catch (firestoreError) {
@@ -210,6 +226,16 @@ class TeacherRepository {
     } catch (e) {
       if (e is Exception) rethrow;
       throw Exception('An unexpected error occurred while loading teachers.');
+    }
+  }
+
+  Future<TeacherModel?> getTeacherById(String teacherId) async {
+    try {
+      final data = await _firestoreService.getTeacherDocument(teacherId);
+      if (data == null) return null;
+      return TeacherModel.fromMap(data, teacherId);
+    } catch (_) {
+      return null;
     }
   }
 

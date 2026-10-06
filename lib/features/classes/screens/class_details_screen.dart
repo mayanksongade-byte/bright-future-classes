@@ -4,6 +4,8 @@ import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/student_model.dart';
 import '../../../data/models/teacher_model.dart';
+import '../../../data/services/auth_service.dart';
+import '../../../data/services/firestore_service.dart';
 import '../../students/screens/student_details_screen.dart';
 import '../../teachers/screens/teacher_details_screen.dart';
 import '../view_models/class_details_view_model.dart';
@@ -19,6 +21,8 @@ class ClassDetailsScreen extends StatefulWidget {
 
 class _ClassDetailsScreenState extends State<ClassDetailsScreen> {
   late final ClassDetailsViewModel _viewModel;
+  bool _isAdmin = true;
+  String _currentUserId = '';
 
   @override
   void initState() {
@@ -26,6 +30,26 @@ class _ClassDetailsScreenState extends State<ClassDetailsScreen> {
     _viewModel = ClassDetailsViewModel(classModel: widget.classModel);
     _viewModel.addListener(_onViewModelChange);
     _viewModel.loadClassDetails();
+    _checkUserRole();
+  }
+
+  Future<void> _checkUserRole() async {
+    try {
+      final currentUser = AuthService().currentUser;
+      if (currentUser != null) {
+        _currentUserId = currentUser.uid;
+        final userDoc = await FirestoreService().getUserDocument(currentUser.uid);
+        final role = (userDoc?['role'] as String? ?? '').toLowerCase();
+        final isActive = userDoc?['isActive'] as bool? ?? false;
+        final teacherId = userDoc?['teacherId'] as String? ?? currentUser.uid;
+        if (mounted) {
+          setState(() {
+            _isAdmin = role == 'admin' && isActive;
+            _currentUserId = teacherId;
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   void _onViewModelChange() {
@@ -63,6 +87,16 @@ class _ClassDetailsScreenState extends State<ClassDetailsScreen> {
     if (result == true && mounted) {
       _viewModel.loadClassDetails();
     }
+  }
+
+  bool _isLoggedInTeacher(TeacherModel teacher) {
+    final currentUser = AuthService().currentUser;
+    if (currentUser == null) return false;
+    return teacher.teacherId == _currentUserId ||
+        teacher.teacherId == currentUser.uid ||
+        (currentUser.email != null &&
+            currentUser.email!.isNotEmpty &&
+            teacher.email.toLowerCase() == currentUser.email!.toLowerCase());
   }
 
   @override
@@ -259,7 +293,8 @@ class _ClassDetailsScreenState extends State<ClassDetailsScreen> {
                                   itemBuilder: (context, index) {
                                     final teacher =
                                         _viewModel.assignedTeachers[index];
-                                    return _buildTeacherCard(teacher);
+                                    return _buildTeacherCard(
+                                        teacher, _isAdmin);
                                   },
                                 ),
                           const SizedBox(height: 28),
@@ -366,7 +401,129 @@ class _ClassDetailsScreenState extends State<ClassDetailsScreen> {
     );
   }
 
-  Widget _buildTeacherCard(TeacherModel teacher) {
+  Widget _buildTeacherCard(TeacherModel teacher, bool isAdmin) {
+    final isSelf = _isLoggedInTeacher(teacher);
+
+    if (!isAdmin) {
+      if (isSelf) {
+        // Logged-in teacher's own card: Clickable, opens own Teacher Details
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _navigateToTeacherDetails(teacher),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3E8FF),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.badge_outlined,
+                      color: AppColors.teacherAccent,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${teacher.name} (You)',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textMain,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          teacher.subject,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.teacherAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.textSecondary,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      } else {
+        // Other co-teacher card: Non-clickable, Name + Subject ONLY
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3E8FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.badge_outlined,
+                  color: AppColors.teacherAccent,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      teacher.name,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMain,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      teacher.subject,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.teacherAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+
+    // Admin view: full teacher card with navigation
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -451,7 +608,7 @@ class _ClassDetailsScreenState extends State<ClassDetailsScreen> {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: AppColors.lightEmerald,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
                   Icons.person_outline_rounded,

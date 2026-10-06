@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
-import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/complaint_model.dart';
 import '../../../data/models/mark_model.dart';
 import '../../../data/models/notice_model.dart';
 import '../../../data/models/student_model.dart';
 import '../../../data/models/teacher_model.dart';
+import '../../../data/models/test_model.dart';
 import '../../../data/repositories/attendance_repository.dart';
 import '../../../data/repositories/class_repository.dart';
 import '../../../data/repositories/complaint_repository.dart';
@@ -17,6 +17,8 @@ import '../../../data/repositories/notice_repository.dart';
 import '../../../data/repositories/student_repository.dart';
 import '../../../data/repositories/teacher_repository.dart';
 import '../../../data/repositories/test_repository.dart';
+import '../../../data/services/auth_service.dart';
+import '../../../data/services/firestore_service.dart';
 import '../../attendance/screens/student_attendance_screen.dart';
 import 'add_student_screen.dart';
 
@@ -42,6 +44,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
   final ComplaintRepository _complaintRepository = ComplaintRepository();
 
   bool _isLoading = true;
+  bool _isAdmin = true;
   ClassModel? _assignedClass;
   TeacherModel? _assignedTeacher;
 
@@ -65,6 +68,23 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
   void initState() {
     super.initState();
     _student = widget.student;
+    _checkRoleAndLoadDetails();
+  }
+
+  Future<void> _checkRoleAndLoadDetails() async {
+    try {
+      final currentUser = AuthService().currentUser;
+      if (currentUser != null) {
+        final userDoc = await FirestoreService().getUserDocument(currentUser.uid);
+        final role = (userDoc?['role'] as String? ?? '').toLowerCase();
+        final isActive = userDoc?['isActive'] as bool? ?? false;
+        if (mounted) {
+          setState(() {
+            _isAdmin = role == 'admin' && isActive;
+          });
+        }
+      }
+    } catch (_) {}
     _loadAllStudentDetails();
   }
 
@@ -120,37 +140,45 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
         _attendancePercentage = total > 0 ? (present / total) * 100 : 0.0;
       } catch (_) {}
 
-      // 4. Resolve Fees
-      try {
-        final allFees = await _feeRepository.getAllFees();
-        final studentFees =
-            allFees.where((f) => f.studentId == _student.studentId).toList();
-        double total = 0.0;
-        for (var f in studentFees) {
-          total += f.finalPayable;
-        }
-        _totalFees = total;
+      // 4. Resolve Fees (Admin Only)
+      if (_isAdmin) {
+        try {
+          final allFees = await _feeRepository.getAllFees();
+          final studentFees =
+              allFees.where((f) => f.studentId == _student.studentId).toList();
+          double total = 0.0;
+          for (var f in studentFees) {
+            total += f.finalPayable;
+          }
+          _totalFees = total;
 
-        final allPayments = await _feeRepository.getAllPayments();
-        final studentPayments = allPayments
-            .where((p) => p.studentId == _student.studentId)
-            .toList();
-        double paid = 0.0;
-        for (var p in studentPayments) {
-          paid += p.amount;
-        }
-        _paidFees = paid;
-        _pendingFees = (_totalFees - _paidFees).clamp(0.0, double.infinity);
-      } catch (_) {}
+          final allPayments = await _feeRepository.getAllPayments();
+          final studentPayments = allPayments
+              .where((p) => p.studentId == _student.studentId)
+              .toList();
+          double paid = 0.0;
+          for (var p in studentPayments) {
+            paid += p.amount;
+          }
+          _paidFees = paid;
+          _pendingFees = (_totalFees - _paidFees).clamp(0.0, double.infinity);
+        } catch (_) {}
+      }
 
       // 5. Resolve Tests & Marks
       try {
-        final allTests = await _testRepository.getAllTests();
+        List<TestModel> tests = [];
+        if (_isAdmin) {
+          tests = await _testRepository.getAllTests();
+        } else if (_student.classId != null && _student.classId!.isNotEmpty) {
+          tests = await _testRepository.getTestsForClass(_student.classId!);
+        }
+
         final List<Map<String, dynamic>> results = [];
         double totalScorePerc = 0.0;
         int scoredCount = 0;
 
-        for (var test in allTests) {
+        for (var test in tests) {
           if (_student.classId != null &&
               _student.classId!.isNotEmpty &&
               test.classId != _student.classId) {
@@ -197,25 +225,32 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
         _latestResult = results.isNotEmpty ? results.first : null;
       } catch (_) {}
 
-      // 6. Resolve Notices (Applicable to THIS student only)
-      try {
-        final notices = await _noticeRepository.getNotices();
-        _applicableNotices = notices.where((notice) {
-          final isAllStudents =
-              notice.targetAudience.toLowerCase() == 'all_students';
-          final isClassMatch = _student.classId != null &&
-              _student.classId!.isNotEmpty &&
-              notice.classIds.contains(_student.classId);
-          return isAllStudents || isClassMatch;
-        }).toList();
-      } catch (_) {}
+      // 6. Resolve Notices (Admin Only)
+      if (_isAdmin) {
+        try {
+          final notices = await _noticeRepository.getNotices();
+          _applicableNotices = notices.where((notice) {
+            final isAllStudents =
+                notice.targetAudience.toLowerCase() == 'all_students';
+            final isClassMatch = _student.classId != null &&
+                _student.classId!.isNotEmpty &&
+                notice.classIds.contains(_student.classId);
+            return isAllStudents || isClassMatch;
+          }).toList();
+        } catch (_) {}
+      }
 
-      // 7. Resolve Complaints (Specific to THIS student only)
+      // 7. Resolve Complaints
       try {
-        final complaints = await _complaintRepository.getComplaints();
-        _studentComplaints = complaints
-            .where((c) => c.studentId == _student.studentId)
-            .toList();
+        if (_isAdmin) {
+          final complaints = await _complaintRepository.getComplaints();
+          _studentComplaints = complaints
+              .where((c) => c.studentId == _student.studentId)
+              .toList();
+        } else {
+          _studentComplaints =
+              await _complaintRepository.getComplaintsForStudent(_student.studentId);
+        }
       } catch (_) {}
 
     } catch (_) {
@@ -236,7 +271,6 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
     );
 
     if (updated == true && mounted) {
-      // Refresh updated student details from repository
       try {
         final students = await _studentRepository.getStudents();
         final refreshed = students.firstWhere(
@@ -396,13 +430,16 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
           ),
         ),
         centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, color: AppColors.primaryEmerald),
-            onPressed: _navigateToEditStudent,
-            tooltip: 'Edit Student',
-          ),
-        ],
+        actions: _isAdmin
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined,
+                      color: AppColors.primaryEmerald),
+                  onPressed: _navigateToEditStudent,
+                  tooltip: 'Edit Student',
+                ),
+              ]
+            : [],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: AppColors.border, height: 1),
@@ -465,289 +502,304 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // SECTION 4 — ACADEMIC INFORMATION
-                        _buildSectionCard(
-                          title: 'Academic Information',
-                          icon: Icons.school_outlined,
-                          children: [
-                            _buildInfoRow(
-                              'Assigned Class',
-                              _assignedClass != null
-                                  ? '${_assignedClass!.className} (${_assignedClass!.standard} - ${_assignedClass!.medium})'
-                                  : 'Not Assigned',
-                            ),
-                            if (_assignedClass != null)
-                              _buildInfoRow('Academic Year', _assignedClass!.academicYear),
-                            _buildInfoRow(
-                              'Assigned Teacher',
-                              _assignedTeacher != null
-                                  ? '${_assignedTeacher!.name} (${_assignedTeacher!.phone})'
-                                  : 'Not Assigned',
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
+                        // ADMIN-ONLY SECTIONS
+                        if (_isAdmin) ...[
+                          // SECTION 4 — ACADEMIC INFORMATION
+                          _buildSectionCard(
+                            title: 'Academic Information',
+                            icon: Icons.school_outlined,
+                            children: [
+                              _buildInfoRow(
+                                'Assigned Class',
+                                _assignedClass != null
+                                    ? '${_assignedClass!.className} (${_assignedClass!.standard} - ${_assignedClass!.medium})'
+                                    : 'Not Assigned',
+                              ),
+                              if (_assignedClass != null)
+                                _buildInfoRow('Academic Year', _assignedClass!.academicYear),
+                              _buildInfoRow(
+                                'Assigned Teacher',
+                                _assignedTeacher != null
+                                    ? '${_assignedTeacher!.name} (${_assignedTeacher!.phone})'
+                                    : 'Not Assigned',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
 
-                        // SECTION 5 — ATTENDANCE SUMMARY
-                        _buildSectionCard(
-                          title: 'Attendance',
-                          icon: Icons.calendar_today_outlined,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildMetricBox(
-                                    label: 'Present',
-                                    value: '$_attendancePresent Days',
-                                    color: AppColors.primaryEmerald,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildMetricBox(
-                                    label: 'Absent',
-                                    value: '$_attendanceAbsent Days',
-                                    color: AppColors.error,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildMetricBox(
-                                    label: 'Attendance',
-                                    value: '${_attendancePercentage.toStringAsFixed(1)}%',
-                                    color: AppColors.teacherAccent,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (context) => StudentAttendanceScreen(
-                                        studentId: _student.studentId,
-                                      ),
+                          // SECTION 5 — ATTENDANCE SUMMARY
+                          _buildSectionCard(
+                            title: 'Attendance',
+                            icon: Icons.calendar_today_outlined,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildMetricBox(
+                                      label: 'Present',
+                                      value: '$_attendancePresent Days',
+                                      color: AppColors.primaryEmerald,
                                     ),
-                                  );
-                                },
-                                icon: const Icon(Icons.history_rounded, size: 18),
-                                label: const Text('View Attendance History'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primaryEmerald,
-                                  side: const BorderSide(color: AppColors.primaryEmerald),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _buildMetricBox(
+                                      label: 'Absent',
+                                      value: '$_attendanceAbsent Days',
+                                      color: AppColors.error,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _buildMetricBox(
+                                      label: 'Attendance',
+                                      value: '${_attendancePercentage.toStringAsFixed(1)}%',
+                                      color: AppColors.teacherAccent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) => StudentAttendanceScreen(
+                                          studentId: _student.studentId,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.history_rounded, size: 18),
+                                  label: const Text('View Attendance History'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.primaryEmerald,
+                                    side: const BorderSide(color: AppColors.primaryEmerald),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
 
-                        // SECTION 6 — FEES
-                        _buildSectionCard(
-                          title: 'Fees',
-                          icon: Icons.account_balance_wallet_outlined,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildMetricBox(
-                                    label: 'Total Payable',
-                                    value: '₹${_totalFees.toStringAsFixed(0)}',
-                                    color: AppColors.textMain,
+                          // SECTION 6 — FEES (Strictly hidden for teachers)
+                          _buildSectionCard(
+                            title: 'Fees',
+                            icon: Icons.account_balance_wallet_outlined,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildMetricBox(
+                                      label: 'Total Payable',
+                                      value: '₹${_totalFees.toStringAsFixed(0)}',
+                                      color: AppColors.textMain,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildMetricBox(
-                                    label: 'Paid Amount',
-                                    value: '₹${_paidFees.toStringAsFixed(0)}',
-                                    color: AppColors.primaryEmerald,
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _buildMetricBox(
+                                      label: 'Paid Amount',
+                                      value: '₹${_paidFees.toStringAsFixed(0)}',
+                                      color: AppColors.primaryEmerald,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildMetricBox(
-                                    label: 'Pending',
-                                    value: '₹${_pendingFees.toStringAsFixed(0)}',
-                                    color: _pendingFees > 0 ? AppColors.error : AppColors.success,
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _buildMetricBox(
+                                      label: 'Pending',
+                                      value: '₹${_pendingFees.toStringAsFixed(0)}',
+                                      color: _pendingFees > 0 ? AppColors.error : AppColors.success,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                        ],
 
-                        // SECTION 7 — TESTS & MARKS
+                        // SECTION 7 — TESTS & MARKS (Allowed for teacher)
                         _buildSectionCard(
                           title: 'Tests & Marks',
                           icon: Icons.assignment_outlined,
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildMetricBox(
-                                    label: 'Tests Taken',
-                                    value: '$_testsTaken',
-                                    color: AppColors.textMain,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildMetricBox(
-                                    label: 'Average Score',
-                                    value: '${_averageMarksPercentage.toStringAsFixed(1)}%',
-                                    color: AppColors.primaryEmerald,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (_latestResult != null) ...[
-                              const SizedBox(height: 12),
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: AppColors.background,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: AppColors.border),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Latest Result',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          '${_latestResult!['testName']} (${_latestResult!['subject']})',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.textMain,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    Text(
-                                      '${_latestResult!['marksObtained']} / ${_latestResult!['totalMarks']}',
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.primaryEmerald,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 14),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: _showAllResultsBottomSheet,
-                                icon: const Icon(Icons.analytics_outlined, size: 18),
-                                label: const Text('View All Results'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primaryEmerald,
-                                  side: const BorderSide(color: AppColors.primaryEmerald),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-
-                        // SECTION 8 — APPLICABLE NOTICES
-                        _buildSectionCard(
-                          title: 'Notices (${_applicableNotices.length})',
-                          icon: Icons.campaign_outlined,
-                          children: [
-                            if (_applicableNotices.isEmpty)
+                            if (_allStudentResults.isEmpty)
                               const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 8),
                                 child: Text(
-                                  'No notices applicable to this student.',
+                                  'No tests recorded yet.',
                                   style: AppTextStyles.subtitle,
                                 ),
                               )
-                            else
-                              ListView.separated(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: _applicableNotices.length,
-                                separatorBuilder: (context, index) =>
-                                    const Divider(height: 1, color: AppColors.border),
-                                itemBuilder: (context, index) {
-                                  final notice = _applicableNotices[index];
-                                  return Padding(
-                                    padding:
-                                        const EdgeInsets.symmetric(vertical: 10),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Icon(
-                                          notice.isPinned
-                                              ? Icons.push_pin_rounded
-                                              : Icons.notifications_none_rounded,
-                                          size: 18,
-                                          color: notice.isPinned
-                                              ? AppColors.primaryEmerald
-                                              : AppColors.textSecondary,
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                notice.title,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: AppColors.textMain,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                notice.description,
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: AppColors.textSecondary,
-                                                ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
+                            else ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildMetricBox(
+                                      label: 'Tests Taken',
+                                      value: '$_testsTaken',
+                                      color: AppColors.textMain,
                                     ),
-                                  );
-                                },
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _buildMetricBox(
+                                      label: 'Average Score',
+                                      value: '${_averageMarksPercentage.toStringAsFixed(1)}%',
+                                      color: AppColors.primaryEmerald,
+                                    ),
+                                  ),
+                                ],
                               ),
+                              if (_latestResult != null) ...[
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.background,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: AppColors.border),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Latest Result',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${_latestResult!['testName']} (${_latestResult!['subject']})',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.textMain,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        '${_latestResult!['marksObtained']} / ${_latestResult!['totalMarks']}',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.primaryEmerald,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _showAllResultsBottomSheet,
+                                  icon: const Icon(Icons.analytics_outlined, size: 18),
+                                  label: const Text('View All Results'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.primaryEmerald,
+                                    side: const BorderSide(color: AppColors.primaryEmerald),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 16),
 
-                        // SECTION 9 — COMPLAINTS
+                        if (_isAdmin) ...[
+                          // SECTION 8 — APPLICABLE NOTICES
+                          _buildSectionCard(
+                            title: 'Notices (${_applicableNotices.length})',
+                            icon: Icons.campaign_outlined,
+                            children: [
+                              if (_applicableNotices.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  child: Text(
+                                    'No notices applicable to this student.',
+                                    style: AppTextStyles.subtitle,
+                                  ),
+                                )
+                              else
+                                ListView.separated(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: _applicableNotices.length,
+                                  separatorBuilder: (context, index) =>
+                                      const Divider(height: 1, color: AppColors.border),
+                                  itemBuilder: (context, index) {
+                                    final notice = _applicableNotices[index];
+                                    return Padding(
+                                      padding:
+                                          const EdgeInsets.symmetric(vertical: 10),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Icon(
+                                            notice.isPinned
+                                                ? Icons.push_pin_rounded
+                                                : Icons.notifications_none_rounded,
+                                            size: 18,
+                                            color: notice.isPinned
+                                                ? AppColors.primaryEmerald
+                                                : AppColors.textSecondary,
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  notice.title,
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: AppColors.textMain,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  notice.description,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: AppColors.textSecondary,
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // SECTION 9 — COMPLAINTS (Allowed for teacher)
                         _buildSectionCard(
                           title: 'Complaints (${_studentComplaints.length})',
                           icon: Icons.report_problem_outlined,
@@ -756,7 +808,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                               const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 8),
                                 child: Text(
-                                  'No complaints found for this student.',
+                                  'No complaints recorded.',
                                   style: AppTextStyles.subtitle,
                                 ),
                               )
@@ -771,7 +823,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                   final complaint = _studentComplaints[index];
                                   final bool isResolved =
                                       complaint.status.toLowerCase() == 'resolved' ||
-                                          complaint.status.toLowerCase() == 'closed';
+                                      complaint.status.toLowerCase() == 'closed';
                                   return Padding(
                                     padding:
                                         const EdgeInsets.symmetric(vertical: 10),
@@ -805,12 +857,14 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                         ),
                                         Container(
                                           padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 4),
+                                              horizontal: 10, vertical: 4),
                                           decoration: BoxDecoration(
                                             color: isResolved
                                                 ? AppColors.lightEmerald
-                                                : AppColors.error.withValues(alpha: 0.1),
-                                            borderRadius: BorderRadius.circular(6),
+                                                : AppColors.error
+                                                    .withValues(alpha: 0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
                                           ),
                                           child: Text(
                                             complaint.status,
@@ -829,13 +883,6 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                 },
                               ),
                           ],
-                        ),
-                        const SizedBox(height: 28),
-
-                        // EDIT STUDENT ACTION BUTTON
-                        PrimaryButton(
-                          text: 'Edit Student Profile',
-                          onPressed: _navigateToEditStudent,
                         ),
                         const SizedBox(height: 20),
                       ],
@@ -961,35 +1008,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
   }
 
   Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 130,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textMain,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return PlatformInfoRow(label: label, value: value);
   }
 
   Widget _buildMetricBox({
@@ -1024,6 +1043,58 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
               color: color,
             ),
             textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PlatformInfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const PlatformInfoRow({super.key, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return PlatformInfoRowContent(label: label, value: value);
+  }
+}
+
+class PlatformInfoRowContent extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const PlatformInfoRowContent({super.key, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMain,
+              ),
+            ),
           ),
         ],
       ),

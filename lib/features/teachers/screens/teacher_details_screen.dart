@@ -190,6 +190,7 @@ class _TeacherDetailsScreenState extends State<TeacherDetailsScreen> {
                           children: [
                             _buildInfoRow('Full Name', _teacher.name),
                             _buildInfoRow('Teacher ID', _teacher.teacherId),
+                            _buildInfoRow('Subject', _teacher.subject),
                             _buildInfoRow('Status', isActive ? 'Active' : 'Inactive'),
                           ],
                         ),

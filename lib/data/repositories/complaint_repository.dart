@@ -46,6 +46,17 @@ class ComplaintRepository {
     }
   }
 
+  Future<List<ComplaintModel>> getComplaintsForStudent(String studentId) async {
+    try {
+      final docs = await _firestoreService.getComplaintDocumentsForStudent(studentId);
+      return docs
+          .map((doc) => ComplaintModel.fromMap(doc.data(), doc.id))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<ComplaintModel?> getComplaintById(String complaintId) async {
     try {
       final data = await _firestoreService.getComplaintDocument(complaintId);
