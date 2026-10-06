@@ -18,20 +18,19 @@ class FirestoreService {
     return null;
   }
 
-  Future<Map<String, dynamic>?> getTeacherDocument(String teacherId) async {
-    final docSnapshot = await _firestore.collection('teachers').doc(teacherId).get();
-    if (docSnapshot.exists) {
-      return docSnapshot.data();
-    }
-    return null;
+  Future<void> saveUserDocument(String uid, Map<String, dynamic> data) async {
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .set(data, SetOptions(merge: true));
   }
 
-  Future<Map<String, dynamic>?> getClassDocument(String classId) async {
-    final docSnapshot = await _firestore.collection('classes').doc(classId).get();
-    if (docSnapshot.exists) {
-      return docSnapshot.data();
-    }
-    return null;
+  Future<void> updateUserProfileDocument(
+      String uid, Map<String, dynamic> data) async {
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .set(data, SetOptions(merge: true));
   }
 
   // Login ID Mapping Methods
@@ -61,26 +60,6 @@ class FirestoreService {
         .set(data, SetOptions(merge: true));
   }
 
-  Future<bool> checkUserIdExists(String userId) async {
-    final formatted = userId.trim().toUpperCase();
-    // 1. Check login_ids collection via direct doc fetch
-    final loginIdDoc =
-        await _firestore.collection('login_ids').doc(formatted).get();
-    if (loginIdDoc.exists) return true;
-
-    // 2. Fallback check in users collection if Admin is authenticated
-    try {
-      final querySnapshot = await _firestore
-          .collection('users')
-          .where('userId', isEqualTo: formatted)
-          .limit(1)
-          .get();
-      return querySnapshot.docs.isNotEmpty;
-    } catch (_) {
-      return false;
-    }
-  }
-
   Future<Map<String, dynamic>?> getUserByUserId(String userId) async {
     final formatted = userId.trim().toUpperCase();
     final loginData = await getLoginIdDocument(formatted);
@@ -106,7 +85,10 @@ class FirestoreService {
   // Student Document Methods
   Future<void> saveStudentDocument(
       String studentId, Map<String, dynamic> data) async {
-    await _firestore.collection('students').doc(studentId).set(data, SetOptions(merge: true));
+    await _firestore
+        .collection('students')
+        .doc(studentId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<bool> checkStudentExists(String studentId) async {
@@ -173,6 +155,14 @@ class FirestoreService {
     }
   }
 
+  Future<Map<String, dynamic>?> getTeacherDocument(String teacherId) async {
+    final docSnapshot = await _firestore.collection('teachers').doc(teacherId).get();
+    if (docSnapshot.exists) {
+      return docSnapshot.data();
+    }
+    return null;
+  }
+
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getTeacherDocumentsByClassId(String classId) async {
     try {
       final snapshot = await _firestore
@@ -202,6 +192,14 @@ class FirestoreService {
   Future<void> saveClassDocument(
       String classId, Map<String, dynamic> data) async {
     await _firestore.collection('classes').doc(classId).set(data, SetOptions(merge: true));
+  }
+
+  Future<Map<String, dynamic>?> getClassDocument(String classId) async {
+    final docSnapshot = await _firestore.collection('classes').doc(classId).get();
+    if (docSnapshot.exists) {
+      return docSnapshot.data();
+    }
+    return null;
   }
 
   Future<void> updateClassDocument(
@@ -561,13 +559,5 @@ class FirestoreService {
 
   Future<void> saveInstituteSettingsDocument(Map<String, dynamic> data) async {
     await _firestore.collection('settings').doc('app').set(data, SetOptions(merge: true));
-  }
-
-  Future<void> saveUserDocument(String uid, Map<String, dynamic> data) async {
-    await _firestore.collection('users').doc(uid).set(data, SetOptions(merge: true));
-  }
-
-  Future<void> updateUserProfileDocument(String uid, Map<String, dynamic> data) async {
-    await _firestore.collection('users').doc(uid).set(data, SetOptions(merge: true));
   }
 }

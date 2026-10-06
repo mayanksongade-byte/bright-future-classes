@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
-import '../../../data/repositories/auth_repository.dart';
-import '../../auth/screens/login_screen.dart';
 import '../view_models/teacher_view_model.dart';
 import 'teacher_assigned_classes_screen.dart';
+import 'teacher_attendance_screen.dart';
+import 'teacher_complaints_screen.dart';
+import 'teacher_notifications_screen.dart';
+import 'teacher_profile_screen.dart';
 import 'teacher_student_list_screen.dart';
+import 'teacher_tests_screen.dart';
 
 class TeacherDashboardScreen extends StatefulWidget {
   const TeacherDashboardScreen({super.key});
@@ -70,7 +73,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         title: const Text(
-          'Teacher Dashboard',
+          'Teacher Workspace',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -79,16 +82,27 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout_rounded, color: AppColors.error),
-            tooltip: 'Sign Out',
-            onPressed: () async {
-              await AuthRepository().signOut();
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (context) => const LoginScreen()),
-                  (route) => false,
-                );
-              }
+            icon: const Icon(Icons.notifications_none_rounded,
+                color: AppColors.textMain),
+            tooltip: 'Notifications',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const TeacherNotificationsScreen(),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.person_outline_rounded,
+                color: AppColors.primaryEmerald),
+            tooltip: 'Profile',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const TeacherProfileScreen(),
+                ),
+              );
             },
           ),
         ],
@@ -118,13 +132,23 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 2. WELCOME HEADER
+                          // 1. WELCOME HEADER
                           _buildWelcomeHeader(),
                           const SizedBox(height: 24),
 
-                          // 3. SUMMARY CARDS
-                          _buildSummaryCards(),
-                          const SizedBox(height: 28),
+                          // 2. ACADEMIC WORKSPACE MODULES
+                          const Text(
+                            'Academic Workspace',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textMain,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          _buildWorkspaceGrid(),
+                          const SizedBox(height: 20),
                         ],
                       ),
                     ),
@@ -186,7 +210,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                     ),
                     const SizedBox(height: 2),
                     const Text(
-                      "Here's an overview of your classes.",
+                      "Here's an overview of your academic workspace.",
                       style: AppTextStyles.subtitle,
                     ),
                   ],
@@ -248,103 +272,182 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
     );
   }
 
-  Widget _buildSummaryCards() {
-    return Row(
-      children: [
-        Expanded(
-          child: GestureDetector(
-            onTap: _navigateToAssignedClasses,
-            child: _buildMetricCard(
-              label: 'Assigned Classes',
-              value: '${_viewModel.assignedClassesCount}',
-              icon: Icons.class_outlined,
-            ),
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: GestureDetector(
-            onTap: _navigateToStudentList,
-            child: _buildMetricCard(
-              label: 'Total Students',
-              value: '${_viewModel.totalStudents}',
-              icon: Icons.people_outline_rounded,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  Widget _buildWorkspaceGrid() {
+    final int classCount = _viewModel.assignedClassesCount;
+    final int studentCount = _viewModel.totalStudents;
 
-  Widget _buildMetricCard({
-    required String label,
-    required String value,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
+    final modules = [
+      {
+        'title': 'My Classes',
+        'subtitle': 'Manage assigned classes',
+        'count': classCount == 1 ? '1 Assigned Class' : '$classCount Assigned Classes',
+        'icon': Icons.class_outlined,
+        'action': _navigateToAssignedClasses,
+      },
+      {
+        'title': 'My Students',
+        'subtitle': 'Student list by class',
+        'count': studentCount == 1 ? '1 Student' : '$studentCount Students',
+        'icon': Icons.people_outline_rounded,
+        'action': _navigateToStudentList,
+      },
+      {
+        'title': 'Attendance',
+        'subtitle': 'Mark & view attendance',
+        'icon': Icons.calendar_today_outlined,
+        'action': () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const TeacherAttendanceScreen(),
+            ),
+          );
+        },
+      },
+      {
+        'title': 'Tests & Marks',
+        'subtitle': 'Assessments & scores',
+        'icon': Icons.assignment_outlined,
+        'action': () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const TeacherTestsScreen(),
+            ),
+          );
+        },
+      },
+      {
+        'title': 'Complaints',
+        'subtitle': 'Student issues & reports',
+        'icon': Icons.report_problem_outlined,
+        'action': () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const TeacherComplaintsScreen(),
+            ),
+          );
+        },
+      },
+      {
+        'title': 'Notifications',
+        'subtitle': 'Staff notices & alerts',
+        'icon': Icons.notifications_none_rounded,
+        'action': () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const TeacherNotificationsScreen(),
+            ),
+          );
+        },
+      },
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.05,
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3E8FF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: AppColors.teacherAccent,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
+      itemCount: modules.length,
+      itemBuilder: (context, index) {
+        final mod = modules[index];
+        final String? count = mod['count'] as String?;
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: mod['action'] as VoidCallback?,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textMain,
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.lightEmerald,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          mod['icon'] as IconData,
+                          size: 20,
+                          color: AppColors.primaryEmerald,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 16,
+                        color: AppColors.textSecondary,
+                      ),
+                    ],
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+                  const Spacer(),
+                  Text(
+                    mod['title'] as String,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMain,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    mod['subtitle'] as String,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                      height: 1.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (count != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.lightEmerald,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        count,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.darkEmerald,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: AppColors.textSecondary,
-            size: 18,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
