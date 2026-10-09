@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/attendance_audit_model.dart';
 import '../models/attendance_model.dart';
+import '../models/notification_model.dart';
 import '../services/firestore_service.dart';
 
 class AttendanceRepository {
@@ -86,6 +88,17 @@ class AttendanceRepository {
     }
   }
 
+  Future<List<AttendanceModel>> getAttendanceForClass(String classId) async {
+    try {
+      final docs = await _firestoreService.getAttendanceDocumentsByClass(classId);
+      return docs
+          .map((doc) => AttendanceModel.fromMap(doc.data(), doc.id))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<List<AttendanceModel>> getAllAttendance() async {
     try {
       final docs = await _firestoreService.getAllAttendanceDocuments();
@@ -95,5 +108,43 @@ class AttendanceRepository {
     } catch (_) {
       return [];
     }
+  }
+
+  Future<void> saveAttendanceAudit(AttendanceAuditModel audit) async {
+    await _firestoreService.saveAttendanceAudit(audit.auditId, audit.toMap());
+  }
+
+  Future<List<AttendanceAuditModel>> getAuditsForClassAndDate(
+      String classId, String date) async {
+    try {
+      final docs = await _firestoreService.getAttendanceAuditsForClassAndDate(classId, date);
+      return docs
+          .map((doc) => AttendanceAuditModel.fromMap(doc.data(), doc.id))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> updateAttendanceRecordWithAudit({
+    required AttendanceModel attendance,
+    required AttendanceAuditModel audit,
+    NotificationModel? notification,
+  }) async {
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    final attRef = firestore.collection('attendance').doc(attendance.attendanceId);
+    batch.set(attRef, attendance.toMap(), SetOptions(merge: true));
+
+    final auditRef = firestore.collection('attendance_audit').doc(audit.auditId);
+    batch.set(auditRef, audit.toMap());
+
+    if (notification != null) {
+      final notifRef = firestore.collection('notifications').doc(notification.notificationId);
+      batch.set(notifRef, notification.toMap());
+    }
+
+    await batch.commit();
   }
 }

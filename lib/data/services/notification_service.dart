@@ -28,6 +28,15 @@ class NotificationService {
         .toList();
   }
 
+  Stream<List<NotificationModel>> streamNotificationsForRecipient(
+      String recipientId) {
+    return _firestoreService
+        .streamNotificationsDocumentsForRecipient(recipientId)
+        .map((docs) => docs
+            .map((doc) => NotificationModel.fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
   Future<NotificationModel?> getNotificationById(String notificationId) async {
     final data = await _firestoreService.getNotificationDocument(notificationId);
     if (data != null) {

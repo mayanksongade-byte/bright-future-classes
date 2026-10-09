@@ -30,6 +30,11 @@ class NotificationRepository {
     }
   }
 
+  Stream<List<NotificationModel>> streamNotificationsForRecipient(
+      String recipientId) {
+    return _notificationService.streamNotificationsForRecipient(recipientId);
+  }
+
   Future<NotificationModel?> getNotificationById(String notificationId) async {
     try {
       return await _notificationService.getNotificationById(notificationId);

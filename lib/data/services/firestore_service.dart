@@ -265,6 +265,15 @@ class FirestoreService {
     return snapshot.docs;
   }
 
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAttendanceDocumentsByClass(
+      String classId) async {
+    final snapshot = await _firestore
+        .collection('attendance')
+        .where('classId', isEqualTo: classId)
+        .get();
+    return snapshot.docs;
+  }
+
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAttendanceDocumentsByStudent(
       String studentId) async {
     final snapshot = await _firestore
@@ -277,6 +286,21 @@ class FirestoreService {
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllAttendanceDocuments() async {
     final snapshot = await _firestore.collection('attendance').get();
+    return snapshot.docs;
+  }
+
+  // Attendance Audit Methods
+  Future<void> saveAttendanceAudit(String auditId, Map<String, dynamic> data) async {
+    await _firestore.collection('attendance_audit').doc(auditId).set(data, SetOptions(merge: true));
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAttendanceAuditsForClassAndDate(
+      String classId, String date) async {
+    final snapshot = await _firestore
+        .collection('attendance_audit')
+        .where('classId', isEqualTo: classId)
+        .where('date', isEqualTo: date)
+        .get();
     return snapshot.docs;
   }
 
@@ -536,6 +560,15 @@ class FirestoreService {
         .orderBy('createdAt', descending: true)
         .get();
     return snapshot.docs;
+  }
+
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      streamNotificationsDocumentsForRecipient(String recipientId) {
+    return _firestore
+        .collection('notifications')
+        .where('recipientId', isEqualTo: recipientId)
+        .snapshots()
+        .map((snapshot) => snapshot.docs);
   }
 
   Future<Map<String, dynamic>?> getNotificationDocument(

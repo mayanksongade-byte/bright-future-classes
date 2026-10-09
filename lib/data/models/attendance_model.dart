@@ -6,7 +6,10 @@ class AttendanceModel {
   final String classId;
   final String date; // YYYY-MM-DD format
   final String status; // 'present' or 'absent'
+  final String originalStatus;
   final String markedBy;
+  final bool isAdminChanged;
+  final String? adminChangeReason;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -16,10 +19,13 @@ class AttendanceModel {
     required this.classId,
     required this.date,
     required this.status,
+    String? originalStatus,
     required this.markedBy,
+    this.isAdminChanged = false,
+    this.adminChangeReason,
     this.createdAt,
     this.updatedAt,
-  });
+  }) : originalStatus = originalStatus ?? status;
 
   static String generateId(String classId, String studentId, String date) {
     return '${classId}_${studentId}_$date';
@@ -42,13 +48,19 @@ class AttendanceModel {
       parsedUpdatedAt = DateTime.tryParse(rawUpdatedAt);
     }
 
+    final currentStatus = map['status'] as String? ?? 'present';
+    final origStatus = map['originalStatus'] as String? ?? currentStatus;
+
     return AttendanceModel(
       attendanceId: docId ?? map['attendanceId'] as String? ?? '',
       studentId: map['studentId'] as String? ?? '',
       classId: map['classId'] as String? ?? '',
       date: map['date'] as String? ?? '',
-      status: map['status'] as String? ?? 'present',
+      status: currentStatus,
+      originalStatus: origStatus,
       markedBy: map['markedBy'] as String? ?? '',
+      isAdminChanged: map['isAdminChanged'] as bool? ?? false,
+      adminChangeReason: map['adminChangeReason'] as String?,
       createdAt: parsedCreatedAt,
       updatedAt: parsedUpdatedAt,
     );
@@ -61,7 +73,10 @@ class AttendanceModel {
       'classId': classId,
       'date': date,
       'status': status,
+      'originalStatus': originalStatus,
       'markedBy': markedBy,
+      'isAdminChanged': isAdminChanged,
+      'adminChangeReason': adminChangeReason,
       'createdAt': createdAt != null
           ? Timestamp.fromDate(createdAt!)
           : FieldValue.serverTimestamp(),
@@ -75,7 +90,10 @@ class AttendanceModel {
     String? classId,
     String? date,
     String? status,
+    String? originalStatus,
     String? markedBy,
+    bool? isAdminChanged,
+    String? adminChangeReason,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -85,7 +103,10 @@ class AttendanceModel {
       classId: classId ?? this.classId,
       date: date ?? this.date,
       status: status ?? this.status,
+      originalStatus: originalStatus ?? this.originalStatus,
       markedBy: markedBy ?? this.markedBy,
+      isAdminChanged: isAdminChanged ?? this.isAdminChanged,
+      adminChangeReason: adminChangeReason ?? this.adminChangeReason,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

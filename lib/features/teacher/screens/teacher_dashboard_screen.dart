@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
+import '../../../data/models/notification_model.dart';
+import '../../../data/repositories/notification_repository.dart';
 import '../view_models/teacher_view_model.dart';
 import 'teacher_assigned_classes_screen.dart';
 import 'teacher_attendance_screen.dart';
@@ -81,15 +84,52 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none_rounded,
-                color: AppColors.textMain),
-            tooltip: 'Notifications',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => const TeacherNotificationsScreen(),
-                ),
+          StreamBuilder<List<NotificationModel>>(
+            stream: NotificationRepository()
+                .streamNotificationsForRecipient(FirebaseAuth.instance.currentUser?.uid ?? ''),
+            builder: (context, snapshot) {
+              final unreadCount = (snapshot.data ?? []).where((n) => !n.isRead).length;
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications_none_rounded,
+                        color: AppColors.textMain),
+                    tooltip: 'Notifications',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const TeacherNotificationsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: AppColors.error,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          '$unreadCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
               );
             },
           ),

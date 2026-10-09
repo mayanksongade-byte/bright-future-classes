@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_loading_indicator.dart';
+import '../../../data/models/attendance_audit_model.dart';
+import '../../../data/models/attendance_model.dart';
+import '../../../data/models/notification_model.dart';
+import '../../../data/repositories/attendance_repository.dart';
+import '../../../data/repositories/notification_repository.dart';
+import '../../../data/services/auth_service.dart';
 
 class TeacherNotificationsScreen extends StatefulWidget {
   const TeacherNotificationsScreen({super.key});
@@ -11,35 +18,242 @@ class TeacherNotificationsScreen extends StatefulWidget {
 
 class _TeacherNotificationsScreenState
     extends State<TeacherNotificationsScreen> {
-  final List<Map<String, dynamic>> _mockNotifications = [
-    {
-      'id': 'N1',
-      'title': 'Faculty Meeting Scheduled',
-      'message': 'Monthly staff review meeting tomorrow at 4:00 PM in Conference Room A.',
-      'time': '2 hours ago',
-      'isRead': false,
-      'type': 'Notice',
-    },
-    {
-      'id': 'N2',
-      'title': 'Attendance Reminder',
-      'message': 'Please submit Class 11-B attendance for today.',
-      'time': '5 hours ago',
-      'isRead': true,
-      'type': 'Reminder',
-    },
-    {
-      'id': 'N3',
-      'title': 'New Exam Schedule Published',
-      'message': 'Mid-term timetable has been updated by the Admin office.',
-      'time': 'Yesterday',
-      'isRead': true,
-      'type': 'System',
-    },
-  ];
+  final NotificationRepository _notificationRepository = NotificationRepository();
+  final AttendanceRepository _attendanceRepository = AttendanceRepository();
+  final AuthService _authService = AuthService();
+
+  Future<void> _markAsRead(NotificationModel notif) async {
+    if (!notif.isRead) {
+      try {
+        await _notificationRepository.markAsRead(notif.notificationId);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _handleNotificationTap(NotificationModel notif) async {
+    await _markAsRead(notif);
+
+    if (notif.referenceType == 'attendance' && notif.referenceId != null) {
+      // referenceId is classId_date
+      final parts = notif.referenceId!.split('_');
+      if (parts.length >= 2) {
+        final classId = parts[0];
+        final date = parts.sublist(1).join('_');
+        
+        // Load attendance and audits for this session
+        final attendanceRecords = await _attendanceRepository.getAttendanceForClassAndDate(classId, date);
+        final audits = await _attendanceRepository.getAuditsForClassAndDate(classId, date);
+
+        if (!mounted) return;
+        _showTeacherAttendanceAuditModal(classId, date, attendanceRecords, audits);
+      }
+    }
+  }
+
+  void _showTeacherAttendanceAuditModal(
+      String classId, String date, List<AttendanceModel> records, List<AttendanceAuditModel> audits) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          expand: false,
+          builder: (context, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.border,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Attendance Updated by Admin (Read-Only)',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMain,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Date: $date · Class ID: $classId',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (audits.isNotEmpty) ...[
+                    const Text(
+                      'Admin Change History',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMain,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: audits.length,
+                        separatorBuilder: (context, index) =>
+                            const Divider(height: 1, color: AppColors.border),
+                        itemBuilder: (context, index) {
+                          final audit = audits[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Student ID: ${audit.studentId}',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700, fontSize: 13)),
+                                Text(
+                                    '${audit.oldStatus.toUpperCase()} → ${audit.newStatus.toUpperCase()}',
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.error)),
+                                Text('Reason: "${audit.reason}"',
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        fontStyle: FontStyle.italic,
+                                        color: AppColors.textMain)),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  const Text(
+                    'Current Attendance Records',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMain,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.separated(
+                      controller: scrollController,
+                      itemCount: records.length,
+                      separatorBuilder: (context, index) =>
+                          const Divider(height: 1, color: AppColors.border),
+                      itemBuilder: (context, index) {
+                        final att = records[index];
+                        final bool isPres = att.status.toLowerCase() == 'present';
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 16,
+                                backgroundColor: isPres
+                                    ? AppColors.lightEmerald
+                                    : AppColors.error.withValues(alpha: 0.1),
+                                child: Text(
+                                  att.studentId.isNotEmpty ? att.studentId[0] : 'S',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: isPres
+                                        ? AppColors.primaryEmerald
+                                        : AppColors.error,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Student ID: ${att.studentId}',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textMain,
+                                      ),
+                                    ),
+                                    if (att.isAdminChanged)
+                                      const Text(
+                                        'Updated by Admin',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: AppColors.error,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isPres
+                                      ? AppColors.lightEmerald
+                                      : AppColors.error.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  att.status.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isPres
+                                        ? AppColors.darkEmerald
+                                        : AppColors.error,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final user = _authService.currentUser;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -65,85 +279,134 @@ class _TeacherNotificationsScreenState
         ),
       ),
       body: SafeArea(
-        child: ListView.separated(
-          padding: const EdgeInsets.all(20),
-          itemCount: _mockNotifications.length,
-          separatorBuilder: (context, index) => const SizedBox(height: 12),
-          itemBuilder: (context, index) {
-            final notif = _mockNotifications[index];
-            final bool isRead = notif['isRead'] as bool;
+        child: user == null
+            ? const Center(child: Text('Please log in.'))
+            : StreamBuilder<List<NotificationModel>>(
+                stream: _notificationRepository.streamNotificationsForRecipient(user.uid),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: AppLoadingIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Unable to load notifications.',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    );
+                  }
 
-            return Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isRead
-                    ? AppColors.surface
-                    : AppColors.primaryEmerald.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isRead
-                      ? AppColors.border
-                      : AppColors.primaryEmerald.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF3E8FF),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.notifications_none_rounded,
-                      color: AppColors.teacherAccent,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              notif['title'] as String,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: isRead
-                                    ? FontWeight.w600
-                                    : FontWeight.w700,
-                                color: AppColors.textMain,
-                              ),
-                            ),
-                            Text(
-                              notif['time'] as String,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          notif['message'] as String,
-                          style: const TextStyle(
-                            fontSize: 13,
+                  final notifications = snapshot.data ?? [];
+
+                  if (notifications.isEmpty) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24.0),
+                        child: Text(
+                          'No notifications found.',
+                          style: TextStyle(
                             color: AppColors.textSecondary,
+                            fontSize: 15,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ],
+                      ),
+                    );
+                  }
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(20),
+                    itemCount: notifications.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final notif = notifications[index];
+                      final bool isRead = notif.isRead;
+
+                      return InkWell(
+                        onTap: () => _handleNotificationTap(notif),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isRead
+                                ? AppColors.surface
+                                : AppColors.primaryEmerald
+                                    .withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isRead
+                                  ? AppColors.border
+                                  : AppColors.primaryEmerald
+                                      .withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF3E8FF),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.notifications_none_rounded,
+                                  color: AppColors.teacherAccent,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            notif.title,
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: isRead
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w700,
+                                              color: AppColors.textMain,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          notif.createdAt != null
+                                              ? '${notif.createdAt!.day}/${notif.createdAt!.month}/${notif.createdAt!.year}'
+                                              : 'Recent',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      notif.message,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
-            );
-          },
-        ),
       ),
     );
   }
