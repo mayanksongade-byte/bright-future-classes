@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../data/models/attendance_audit_model.dart';
 import '../../../data/models/attendance_model.dart';
 import '../../../data/models/class_model.dart';
+import '../../../data/models/notification_model.dart';
 import '../../../data/models/student_model.dart';
 import '../../../data/models/teacher_model.dart';
 import '../../../data/repositories/attendance_repository.dart';
+import '../../../data/repositories/notification_repository.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/firestore_service.dart';
 
@@ -39,12 +42,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
 
   // History Tab State
   String _historyClassName = '';
-  String _historyMonth = 'October 2026';
-  final List<String> _months = [
-    'October 2026',
-    'September 2026',
-    'August 2026'
-  ];
+  DateTime _historyDate = DateTime.now();
   List<Map<String, dynamic>> _realHistoryRecords = [];
   bool _isHistoryLoading = false;
 
@@ -68,6 +66,23 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     final m = _selectedDate.month.toString().padLeft(2, '0');
     final d = _selectedDate.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
+  }
+
+  String get _formattedHistoryDateString {
+    final y = _historyDate.year.toString().padLeft(4, '0');
+    final m = _historyDate.month.toString().padLeft(2, '0');
+    final d = _historyDate.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  String get _displayHistoryDateString {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final d = _historyDate.day.toString().padLeft(2, '0');
+    final m = months[_historyDate.month - 1];
+    return '$d $m ${_historyDate.year}';
   }
 
   Future<void> _loadTeacherClassesAndAttendance() async {
@@ -187,59 +202,68 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
           doc.id: StudentModel.fromMap(doc.data(), doc.id)
       };
 
-      // Get all attendance for class
-      final classAttendance = await _attendanceRepository.getAttendanceForClass(classId);
-      
-      // Group by date
-      Map<String, List<AttendanceModel>> dateGroup = {};
-      for (var att in classAttendance) {
-        dateGroup.putIfAbsent(att.date, () => []).add(att);
+      // Get attendance for selected class and selected date
+      final dateStr = _formattedHistoryDateString;
+      final classAttendance = await _attendanceRepository.getAttendanceForClassAndDate(classId, dateStr);
+
+      if (classAttendance.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _realHistoryRecords = [];
+            _isHistoryLoading = false;
+          });
+        }
+        return;
       }
 
-      List<Map<String, dynamic>> historyRecords = [];
-      dateGroup.forEach((date, attList) {
-        int present = attList.where((a) => a.status.toLowerCase() == 'present').length;
-        int absent = attList.where((a) => a.status.toLowerCase() == 'absent').length;
-        int total = present + absent;
-        String percentage = total > 0 ? '${((present / total) * 100).round()}%' : '0%';
+      int present = classAttendance.where((a) => a.status.toLowerCase() == 'present').length;
+      int absent = classAttendance.where((a) => a.status.toLowerCase() == 'absent').length;
+      int total = present + absent;
+      String percentage = total > 0 ? '${((present / total) * 100).round()}%' : '0%';
+      bool hasAdminChanges = classAttendance.any((a) => a.isAdminChanged);
+      String submitterName = classAttendance.first.markedByName.isNotEmpty
+          ? classAttendance.first.markedByName
+          : 'Teacher';
 
-        List<Map<String, dynamic>> studentRows = [];
-        studentsMap.forEach((studentId, student) {
-          final att = attList.firstWhere(
-            (a) => a.studentId == studentId,
-            orElse: () => AttendanceModel(
-              attendanceId: '',
-              studentId: studentId,
-              classId: classId,
-              date: date,
-              status: 'Present',
-              markedBy: '',
-            ),
-          );
-          studentRows.add({
-            'name': student.name,
-            'rollNo': studentId.length > 4 ? studentId.substring(studentId.length - 4) : studentId,
-            'status': att.status.toLowerCase() == 'absent' ? 'Absent' : 'Present',
-          });
-        });
-
-        historyRecords.add({
-          'date': date,
-          'fullDate': date,
-          'present': present,
-          'absent': absent,
-          'total': total > 0 ? total : studentsMap.length,
-          'percentage': percentage,
-          'students': studentRows,
+      List<Map<String, dynamic>> studentRows = [];
+      studentsMap.forEach((studentId, student) {
+        final att = classAttendance.firstWhere(
+          (a) => a.studentId == studentId,
+          orElse: () => AttendanceModel(
+            attendanceId: '',
+            studentId: studentId,
+            classId: classId,
+            date: dateStr,
+            status: 'Present',
+            markedBy: '',
+          ),
+        );
+        studentRows.add({
+          'name': student.name,
+          'rollNo': studentId.length > 4 ? studentId.substring(studentId.length - 4) : studentId,
+          'status': att.status.toLowerCase() == 'absent' ? 'Absent' : 'Present',
+          'originalStatus': att.originalStatus,
+          'isAdminChanged': att.isAdminChanged,
+          'adminChangeReason': att.adminChangeReason,
         });
       });
 
-      // Sort by date descending
-      historyRecords.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
+      final record = {
+        'date': _displayHistoryDateString,
+        'canonicalDate': dateStr,
+        'fullDate': _displayHistoryDateString,
+        'present': present,
+        'absent': absent,
+        'total': total > 0 ? total : studentsMap.length,
+        'percentage': percentage,
+        'hasAdminChanges': hasAdminChanges,
+        'submitterName': submitterName,
+        'students': studentRows,
+      };
 
       if (mounted) {
         setState(() {
-          _realHistoryRecords = historyRecords;
+          _realHistoryRecords = [record];
           _isHistoryLoading = false;
         });
       }
@@ -291,6 +315,31 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
         _selectedDate = picked;
       });
       await _loadStudentsAndAttendanceForSelectedClass();
+    }
+  }
+
+  Future<void> _pickHistoryDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _historyDate,
+      firstDate: DateTime(2025),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primaryEmerald,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        _historyDate = picked;
+      });
+      await _loadHistoryForClass();
     }
   }
 
@@ -415,6 +464,9 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     final currentUser = _authService.currentUser;
     if (classId.isEmpty || currentUser == null) return;
 
+    final userDoc = await _firestoreService.getUserDocument(currentUser.uid);
+    final teacherName = userDoc?['name'] as String? ?? 'Teacher';
+
     final dateStr = _formattedDateString;
     List<AttendanceModel> attendanceList = [];
 
@@ -431,12 +483,40 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
           date: dateStr,
           status: status,
           markedBy: currentUser.uid,
+          markedByRole: 'teacher',
+          markedByName: teacherName,
         ),
       );
     }
 
+    final sessionData = {
+      'sessionId': '${classId}_$dateStr',
+      'classId': classId,
+      'className': _selectedClassName,
+      'date': dateStr,
+      'submittedBy': currentUser.uid,
+      'submittedByRole': 'teacher',
+      'submittedByName': teacherName,
+    };
+
     try {
-      await _attendanceRepository.saveAttendanceBatch(attendanceList);
+      await _attendanceRepository.saveAttendanceBatch(attendanceList, sessionData: sessionData);
+
+      // Create notification for admin
+      final notificationId = 'notif_${DateTime.now().millisecondsSinceEpoch}';
+      final notification = NotificationModel(
+        notificationId: notificationId,
+        recipientId: 'admin',
+        recipientRole: 'admin',
+        type: 'attendance_submitted',
+        title: 'Attendance Submitted',
+        message: 'Teacher $teacherName submitted attendance for Class $_selectedClassName on $dateStr ($_presentCount Present, $_absentCount Absent).',
+        referenceId: '${classId}_$dateStr',
+        referenceType: 'attendance',
+        isRead: false,
+      );
+      await NotificationRepository().createNotification(notification);
+
       if (mounted) {
         setState(() {
           _isAttendanceSubmitted = true;
@@ -600,7 +680,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                                   SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      'Attendance already submitted. Attendance is locked and cannot be changed.',
+                                      'Attendance for this class and date has already been submitted and cannot be edited by a Teacher.',
                                       style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w700,
@@ -998,7 +1078,6 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
               ],
             ),
           ),
-          // Exactly TWO toggle buttons: Present and Absent
           Row(
             children: [
               _buildAttendanceToggleButton(
@@ -1068,22 +1147,31 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Class & Month Selectors
+        // 1. Class & Calendar Selectors
         _buildHistorySelectors(classNames),
         const SizedBox(height: 16),
 
-        // 2. Monthly Summary Card
-        _buildMonthlySummaryCard(),
-        const SizedBox(height: 20),
-
-        // 3. Attendance History Heading & List
-        const Text(
-          'Attendance History',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textMain,
-          ),
+        // 2. Attendance History Heading & List
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Attendance History',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textMain,
+              ),
+            ),
+            Text(
+              _displayHistoryDateString,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primaryEmerald,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
 
@@ -1098,9 +1186,9 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: const Text(
-                      'No attendance history found.',
-                      style: TextStyle(
+                    child: Text(
+                      'No attendance records found for $_displayHistoryDateString.',
+                      style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                         color: AppColors.textSecondary,
@@ -1115,6 +1203,8 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                     separatorBuilder: (context, index) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final record = _realHistoryRecords[index];
+                      final bool hasAdminChanges = record['hasAdminChanges'] as bool? ?? false;
+
                       return Material(
                         color: Colors.transparent,
                         child: InkWell(
@@ -1127,56 +1217,79 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: AppColors.border),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      record['date'] as String,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.textMain,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${record['present']} Present · ${record['absent']} Absent',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
                                 Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.lightEmerald,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
+                                    Expanded(
                                       child: Text(
-                                        '${record['percentage']} Attendance',
+                                        record['date'] as String,
                                         style: const TextStyle(
-                                          fontSize: 11,
+                                          fontSize: 15,
                                           fontWeight: FontWeight.w700,
-                                          color: AppColors.darkEmerald,
+                                          color: AppColors.textMain,
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    const Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: AppColors.textSecondary,
-                                      size: 20,
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.lightEmerald,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            '${record['percentage']} Attendance',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.darkEmerald,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Icon(
+                                          Icons.chevron_right_rounded,
+                                          color: AppColors.textSecondary,
+                                          size: 20,
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '${record['present']} Present · ${record['absent']} Absent · By: ${record['submitterName']}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (hasAdminChanges) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.error.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Text(
+                                      'Admin Changes',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.error,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -1184,10 +1297,6 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                       );
                     },
                   ),
-        const SizedBox(height: 24),
-
-        // 4. Needs Attention Section
-        _buildNeedsAttentionSection(),
       ],
     );
   }
@@ -1200,173 +1309,109 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Select Class',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: classNames.contains(_historyClassName) ? _historyClassName : classNames.first,
-                    isDense: true,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textMain,
-                    ),
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.textSecondary),
-                    items: classNames
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
-                    onChanged: (v) async {
-                      if (v != null) {
-                        setState(() {
-                          _historyClassName = v;
-                        });
-                        await _loadHistoryForClass();
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(width: 1, height: 36, color: AppColors.border),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Month',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _historyMonth,
-                    isDense: true,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textMain,
-                    ),
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.textSecondary),
-                    items: _months
-                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() {
-                          _historyMonth = v;
-                        });
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMonthlySummaryCard() {
-    int totalDays = _realHistoryRecords.length;
-    int totalPresentSum = 0;
-    int totalAbsentSum = 0;
-    for (var rec in _realHistoryRecords) {
-      totalPresentSum += (rec['present'] as int? ?? 0);
-      totalAbsentSum += (rec['absent'] as int? ?? 0);
-    }
-    int totalMarked = totalPresentSum + totalAbsentSum;
-    String classAttendanceRate = totalMarked > 0
-        ? '${((totalPresentSum / totalMarked) * 100).round()}%'
-        : '0%';
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                _historyMonth,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textMain,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Select Class',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: classNames.contains(_historyClassName) ? _historyClassName : classNames.first,
+                        isDense: true,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textMain,
+                        ),
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                            color: AppColors.textSecondary),
+                        items: classNames
+                            .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                            .toList(),
+                        onChanged: (v) async {
+                          if (v != null) {
+                            setState(() {
+                              _historyClassName = v;
+                            });
+                            await _loadHistoryForClass();
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.lightEmerald,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '$classAttendanceRate Class Attendance',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.darkEmerald,
+              Container(width: 1, height: 36, color: AppColors.border),
+              const SizedBox(width: 16),
+              Expanded(
+                child: InkWell(
+                  onTap: _pickHistoryDate,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Select Date',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.calendar_today_outlined,
+                              size: 16, color: AppColors.primaryEmerald),
+                          const SizedBox(width: 6),
+                          Text(
+                            _displayHistoryDateString,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textMain,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          const Divider(height: 1, color: AppColors.border),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildSummaryColumn('Attendance Days', '$totalDays', AppColors.textMain),
-              Container(width: 1, height: 24, color: AppColors.border),
-              _buildSummaryColumn('Total Present', '$totalPresentSum', AppColors.success),
-              Container(width: 1, height: 24, color: AppColors.border),
-              _buildSummaryColumn('Total Absent', '$totalAbsentSum', AppColors.error),
-            ],
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _historyDate = DateTime.now();
+                });
+                _loadHistoryForClass();
+              },
+              icon: const Icon(Icons.today_rounded, size: 16, color: AppColors.primaryEmerald),
+              label: const Text('Today', style: TextStyle(color: AppColors.primaryEmerald, fontWeight: FontWeight.w600, fontSize: 12)),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              ),
+            ),
           ),
         ],
       ),
     );
-  }
-
-  Widget _buildNeedsAttentionSection() {
-    return const SizedBox.shrink();
   }
 
   void _showDateDetailsModal(Map<String, dynamic> record) {
@@ -1414,7 +1459,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        '${record['fullDate']} · $_historyClassName',
+                        '${record['fullDate']} · $_historyClassName (Read-Only)',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -1429,6 +1474,30 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                           fontWeight: FontWeight.w600,
                           color: AppColors.textSecondary,
                         ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final canonicalDate = record['canonicalDate'] as String? ?? _formattedHistoryDateString;
+                              final audits = await _attendanceRepository.getAuditsForClassAndDate(_historyClassId, canonicalDate);
+                              if (!context.mounted) return;
+                              _showAuditHistoryModal(audits);
+                            },
+                            icon: const Icon(Icons.history_rounded, size: 16),
+                            label: const Text('View Change History'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.background,
+                              foregroundColor: AppColors.textMain,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                side: const BorderSide(color: AppColors.border),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 16),
                       TextField(
@@ -1478,6 +1547,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                                   final st = filtered[index];
                                   final bool isPres =
                                       st['status'] == 'Present';
+                                  final bool isChanged = st['isAdminChanged'] as bool? ?? false;
 
                                   return Padding(
                                     padding: const EdgeInsets.symmetric(
@@ -1524,6 +1594,15 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                                                   color: AppColors.textSecondary,
                                                 ),
                                               ),
+                                              if (isChanged)
+                                                Text(
+                                                  'Original: ${st['originalStatus']} · Changed by Admin',
+                                                  style: const TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: AppColors.error,
+                                                  ),
+                                                ),
                                             ],
                                           ),
                                         ),
@@ -1561,6 +1640,73 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
               },
             );
           },
+        );
+      },
+    );
+  }
+
+  void _showAuditHistoryModal(List<AttendanceAuditModel> audits) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Attendance Change History',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textMain),
+              ),
+              const SizedBox(height: 16),
+              audits.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('No change history found for this session.', style: TextStyle(color: AppColors.textSecondary)),
+                    )
+                  : Expanded(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: audits.length,
+                        separatorBuilder: (context, index) => const Divider(height: 1, color: AppColors.border),
+                        itemBuilder: (context, index) {
+                          final audit = audits[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Student ID: ${audit.studentId}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                                const SizedBox(height: 2),
+                                Text('${audit.oldStatus.toUpperCase()} → ${audit.newStatus.toUpperCase()}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primaryEmerald)),
+                                const SizedBox(height: 2),
+                                Text('Changed by: ${audit.changedByName} (${audit.changedByRole})', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                                const SizedBox(height: 2),
+                                Text('Reason: "${audit.reason.isNotEmpty ? audit.reason : 'No reason provided'}"', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.textMain)),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+            ],
+          ),
         );
       },
     );

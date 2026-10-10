@@ -246,13 +246,27 @@ class FirestoreService {
         .set(data, SetOptions(merge: true));
   }
 
-  Future<void> saveAttendanceBatch(List<dynamic> attendanceList) async {
+  Future<void> saveAttendanceBatch(List<dynamic> attendanceList, {Map<String, dynamic>? sessionData}) async {
     final batch = _firestore.batch();
+    if (sessionData != null && attendanceList.isNotEmpty) {
+      final classId = attendanceList.first.classId;
+      final date = attendanceList.first.date;
+      final sessionRef = _firestore.collection('attendance_sessions').doc('${classId}_$date');
+      batch.set(sessionRef, sessionData);
+    }
     for (var att in attendanceList) {
       final docRef = _firestore.collection('attendance').doc(att.attendanceId);
-      batch.set(docRef, att.toMap(), SetOptions(merge: true));
+      batch.set(docRef, att.toMap());
     }
     await batch.commit();
+  }
+
+  Future<bool> checkAttendanceSessionExists(String classId, String date) async {
+    final doc = await _firestore
+        .collection('attendance_sessions')
+        .doc('${classId}_$date')
+        .get();
+    return doc.exists;
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAttendanceDocumentsByClassAndDate(
@@ -557,9 +571,16 @@ class FirestoreService {
     final snapshot = await _firestore
         .collection('notifications')
         .where('recipientId', isEqualTo: recipientId)
-        .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs;
+    final list = snapshot.docs;
+    list.sort((a, b) {
+      final rawA = a.data()['createdAt'];
+      final rawB = b.data()['createdAt'];
+      final dateA = rawA is Timestamp ? rawA.toDate() : DateTime(2025);
+      final dateB = rawB is Timestamp ? rawB.toDate() : DateTime(2025);
+      return dateB.compareTo(dateA);
+    });
+    return list;
   }
 
   Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
@@ -568,7 +589,17 @@ class FirestoreService {
         .collection('notifications')
         .where('recipientId', isEqualTo: recipientId)
         .snapshots()
-        .map((snapshot) => snapshot.docs);
+        .map((snapshot) {
+      final list = snapshot.docs.toList();
+      list.sort((a, b) {
+        final rawA = a.data()['createdAt'];
+        final rawB = b.data()['createdAt'];
+        final dateA = rawA is Timestamp ? rawA.toDate() : DateTime(2025);
+        final dateB = rawB is Timestamp ? rawB.toDate() : DateTime(2025);
+        return dateB.compareTo(dateA);
+      });
+      return list;
+    });
   }
 
   Future<Map<String, dynamic>?> getNotificationDocument(

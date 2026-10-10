@@ -50,6 +50,63 @@ class _TeacherNotificationsScreenState
     }
   }
 
+  void _confirmDeleteNotification(NotificationModel notif, String currentUserUid) {
+    if (notif.recipientId != currentUserUid) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Delete Notification?',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textMain),
+          ),
+          content: const Text(
+            'Are you sure you want to delete this notification?',
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final scaffoldMessenger = ScaffoldMessenger.of(context);
+                Navigator.of(dialogContext).pop();
+                try {
+                  await _notificationRepository.deleteNotification(notif.notificationId);
+                  if (!mounted) return;
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Notification deleted.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to delete notification: ${e.toString().replaceAll("Exception: ", "")}'),
+                      backgroundColor: AppColors.error,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showTeacherAttendanceAuditModal(
       String classId, String date, List<AttendanceModel> records, List<AttendanceAuditModel> audits) {
     showModalBottomSheet(
@@ -398,6 +455,38 @@ class _TeacherNotificationsScreenState
                                     ),
                                   ],
                                 ),
+                              ),
+                              PopupMenuButton<String>(
+                                icon: const Icon(
+                                  Icons.more_vert_rounded,
+                                  size: 18,
+                                  color: AppColors.textSecondary,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                onSelected: (val) {
+                                  if (val == 'delete') {
+                                    _confirmDeleteNotification(notif, user.uid);
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete_outline_rounded,
+                                            size: 18, color: AppColors.error),
+                                        SizedBox(width: 8),
+                                        Text('Delete',
+                                            style: TextStyle(
+                                                color: AppColors.error,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

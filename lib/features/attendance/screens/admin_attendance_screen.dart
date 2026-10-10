@@ -81,12 +81,42 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     }
   }
 
+  Future<void> _selectSubmittedSessionsDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _viewModel.submittedSessionsDate,
+      firstDate: DateTime(2025, 1, 1),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primaryEmerald,
+              onPrimary: Colors.white,
+              surface: AppColors.surface,
+              onSurface: AppColors.textMain,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      _viewModel.setSubmittedSessionsDate(picked);
+    }
+  }
+
   Future<void> _handleSave() async {
     if (_viewModel.isSaving) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final success = await _viewModel.saveAttendance(user.uid);
+    final success = await _viewModel.saveAttendance(
+      user.uid,
+      currentUserName: user.displayName ?? 'Admin',
+      userRole: 'admin',
+    );
     if (!mounted) return;
 
     if (success) {
@@ -145,6 +175,66 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
           viewModel: _viewModel,
         );
       },
+    );
+  }
+
+  Widget _buildExistingSessionBanner() {
+    final submitter = _viewModel.existingSubmitterName;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: AppColors.lightEmerald,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primaryEmerald.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.info_outline_rounded, color: AppColors.darkEmerald, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Attendance already submitted by $submitter',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.darkEmerald,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Present: ${_viewModel.presentCount} · Absent: ${_viewModel.absentCount} · Total: ${_viewModel.totalStudents} (${_viewModel.attendancePercentage.toStringAsFixed(1)}%)',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMain),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'To change any student\'s attendance, open Submitted Sessions and edit the existing session.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: () {
+              _viewModel.setAdminTab(1); // Switch to Submitted Sessions tab!
+            },
+            icon: const Icon(Icons.edit_note_rounded, size: 18),
+            label: const Text('Open Submitted Sessions'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryEmerald,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -368,6 +458,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                           ),
                           const SizedBox(height: 24),
 
+                          // Existing Session Submitted Banner (Case B/C)
+                          if (_viewModel.isExistingSessionSubmitted)
+                            _buildExistingSessionBanner(),
+
                           // Summary Card
                           Container(
                             padding: const EdgeInsets.all(18),
@@ -437,7 +531,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                   color: AppColors.textMain,
                                 ),
                               ),
-                              if (_viewModel.students.isNotEmpty)
+                              if (_viewModel.students.isNotEmpty && !_viewModel.isExistingSessionSubmitted)
                                 Row(
                                   children: [
                                     TextButton.icon(
@@ -574,6 +668,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                                 statusValue: 'present',
                                                 activeColor: AppColors.success,
                                                 isSelected: isPresent,
+                                                isDisabled: _viewModel.isExistingSessionSubmitted,
                                               ),
                                               const SizedBox(width: 8),
                                               _buildToggleButton(
@@ -582,6 +677,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                                 statusValue: 'absent',
                                                 activeColor: AppColors.error,
                                                 isSelected: !isPresent,
+                                                isDisabled: _viewModel.isExistingSessionSubmitted,
                                               ),
                                             ],
                                           ),
@@ -591,12 +687,49 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                   },
                                 ),
                           const SizedBox(height: 24),
-                          PrimaryButton(
-                            text: 'Save Attendance',
-                            onPressed: _viewModel.isSaving ? null : _handleSave,
-                          ),
+                          if (!_viewModel.isExistingSessionSubmitted)
+                            PrimaryButton(
+                              text: 'Save Attendance',
+                              onPressed: _viewModel.isSaving ? null : _handleSave,
+                            ),
                         ] else ...[
                           // SUBMITTED SESSIONS TAB
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Filter by Date',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textMain,
+                                ),
+                              ),
+                              InkWell(
+                                onTap: _selectSubmittedSessionsDate,
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: AppColors.border),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.calendar_today_rounded, size: 16, color: AppColors.primaryEmerald),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        _viewModel.formattedSubmittedSessionsDate,
+                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMain),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
                           _viewModel.submittedSessions.isEmpty
                               ? Container(
                                   width: double.infinity,
@@ -606,9 +739,9 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                     borderRadius: BorderRadius.circular(16),
                                     border: Border.all(color: AppColors.border),
                                   ),
-                                  child: const Text(
-                                    'No submitted attendance sessions found.',
-                                    style: TextStyle(
+                                  child: Text(
+                                    'No submitted attendance sessions found for ${_viewModel.formattedSubmittedSessionsDate}.',
+                                    style: const TextStyle(
                                       fontSize: 14,
                                       color: AppColors.textSecondary,
                                     ),
@@ -756,9 +889,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     required String statusValue,
     required Color activeColor,
     required bool isSelected,
+    bool isDisabled = false,
   }) {
     return GestureDetector(
-      onTap: _viewModel.isSaving
+      onTap: (_viewModel.isSaving || isDisabled)
           ? null
           : () => _viewModel.setStatus(studentId, statusValue),
       child: AnimatedContainer(
@@ -844,13 +978,13 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
               Text('Class: $className · Date: ${attendance.date}'),
               const SizedBox(height: 12),
               Text('Current Status: ${attendance.status.toUpperCase()}'),
-              Text('New Status: ${newStatus.toUpperCase()}', style: TextStyle(fontWeight: FontWeight.w700, color: newStatus == 'present' ? AppColors.success : AppColors.error)),
+              Text('Change To: ${newStatus.toUpperCase()}', style: TextStyle(fontWeight: FontWeight.w700, color: newStatus == 'present' ? AppColors.success : AppColors.error)),
               const SizedBox(height: 16),
               TextField(
                 controller: reasonController,
                 maxLines: 2,
                 decoration: InputDecoration(
-                  labelText: 'Reason for change *',
+                  labelText: 'Reason for change (Optional)',
                   hintText: 'e.g. Student arrived late',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 ),
@@ -865,17 +999,6 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
             ElevatedButton(
               onPressed: () async {
                 final reason = reasonController.text.trim();
-                if (reason.isEmpty) {
-                  if (!dialogContext.mounted) return;
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Reason is required to change attendance.'),
-                      backgroundColor: AppColors.error,
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                  return;
-                }
 
                 final student = StudentModel(
                   studentId: attendance.studentId,
@@ -901,7 +1024,6 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
 
                 if (!mounted) return;
                 if (success) {
-                  // Immediately update local session records and counts
                   final List<AttendanceModel> records =
                       List<AttendanceModel>.from(session['records'] as List);
                   final idx = records.indexWhere((r) => r.attendanceId == attendance.attendanceId);
@@ -1001,7 +1123,7 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
                                 const SizedBox(height: 2),
                                 Text('Changed by: ${audit.changedByName} (${audit.changedByRole})', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                                 const SizedBox(height: 2),
-                                Text('Reason: "${audit.reason}"', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.textMain)),
+                                Text('Reason: "${audit.reason.isNotEmpty ? audit.reason : 'No reason provided'}"', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.textMain)),
                               ],
                             ),
                           );

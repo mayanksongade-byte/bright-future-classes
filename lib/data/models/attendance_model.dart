@@ -7,7 +7,10 @@ class AttendanceModel {
   final String date; // YYYY-MM-DD format
   final String status; // 'present' or 'absent'
   final String originalStatus;
-  final String markedBy;
+  final String markedBy; // UID
+  final String markedByRole; // 'admin' or 'teacher'
+  final String markedByName; // Name of submitter
+  final bool teacherEditUsed;
   final bool isAdminChanged;
   final String? adminChangeReason;
   final DateTime? createdAt;
@@ -21,6 +24,9 @@ class AttendanceModel {
     required this.status,
     String? originalStatus,
     required this.markedBy,
+    this.markedByRole = 'teacher',
+    this.markedByName = '',
+    this.teacherEditUsed = false,
     this.isAdminChanged = false,
     this.adminChangeReason,
     this.createdAt,
@@ -59,6 +65,9 @@ class AttendanceModel {
       status: currentStatus,
       originalStatus: origStatus,
       markedBy: map['markedBy'] as String? ?? '',
+      markedByRole: map['markedByRole'] as String? ?? 'teacher',
+      markedByName: map['markedByName'] as String? ?? '',
+      teacherEditUsed: map['teacherEditUsed'] as bool? ?? false,
       isAdminChanged: map['isAdminChanged'] as bool? ?? false,
       adminChangeReason: map['adminChangeReason'] as String?,
       createdAt: parsedCreatedAt,
@@ -75,6 +84,9 @@ class AttendanceModel {
       'status': status,
       'originalStatus': originalStatus,
       'markedBy': markedBy,
+      'markedByRole': markedByRole,
+      'markedByName': markedByName,
+      'teacherEditUsed': teacherEditUsed,
       'isAdminChanged': isAdminChanged,
       'adminChangeReason': adminChangeReason,
       'createdAt': createdAt != null
@@ -92,6 +104,9 @@ class AttendanceModel {
     String? status,
     String? originalStatus,
     String? markedBy,
+    String? markedByRole,
+    String? markedByName,
+    bool? teacherEditUsed,
     bool? isAdminChanged,
     String? adminChangeReason,
     DateTime? createdAt,
@@ -105,6 +120,9 @@ class AttendanceModel {
       status: status ?? this.status,
       originalStatus: originalStatus ?? this.originalStatus,
       markedBy: markedBy ?? this.markedBy,
+      markedByRole: markedByRole ?? this.markedByRole,
+      markedByName: markedByName ?? this.markedByName,
+      teacherEditUsed: teacherEditUsed ?? this.teacherEditUsed,
       isAdminChanged: isAdminChanged ?? this.isAdminChanged,
       adminChangeReason: adminChangeReason ?? this.adminChangeReason,
       createdAt: createdAt ?? this.createdAt,

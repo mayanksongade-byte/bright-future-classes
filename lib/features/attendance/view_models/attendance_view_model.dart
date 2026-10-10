@@ -7,6 +7,7 @@ import '../../../data/models/notification_model.dart';
 import '../../../data/models/student_model.dart';
 import '../../../data/repositories/attendance_repository.dart';
 import '../../../data/repositories/class_repository.dart';
+import '../../../data/repositories/notification_repository.dart';
 import '../../../data/repositories/student_repository.dart';
 import '../../../data/repositories/teacher_repository.dart';
 
@@ -15,16 +16,19 @@ class AttendanceViewModel extends ChangeNotifier {
   final ClassRepository _classRepository;
   final StudentRepository _studentRepository;
   final TeacherRepository _teacherRepository;
+  final NotificationRepository _notificationRepository;
 
   AttendanceViewModel({
     AttendanceRepository? attendanceRepository,
     ClassRepository? classRepository,
     StudentRepository? studentRepository,
     TeacherRepository? teacherRepository,
+    NotificationRepository? notificationRepository,
   })  : _attendanceRepository = attendanceRepository ?? AttendanceRepository(),
         _classRepository = classRepository ?? ClassRepository(),
         _studentRepository = studentRepository ?? StudentRepository(),
-        _teacherRepository = teacherRepository ?? TeacherRepository();
+        _teacherRepository = teacherRepository ?? TeacherRepository(),
+        _notificationRepository = notificationRepository ?? NotificationRepository();
 
   List<ClassModel> _classes = [];
   List<ClassModel> get classes => List.unmodifiable(_classes);
@@ -38,7 +42,6 @@ class AttendanceViewModel extends ChangeNotifier {
   List<StudentModel> _students = [];
   List<StudentModel> get students => List.unmodifiable(_students);
 
-  // Map of studentId -> 'present' or 'absent'
   final Map<String, String> _attendanceMap = {};
   Map<String, String> get attendanceMap => Map.unmodifiable(_attendanceMap);
 
@@ -57,19 +60,37 @@ class AttendanceViewModel extends ChangeNotifier {
   int _adminTabIndex = 0; // 0 = Mark Attendance, 1 = Submitted Sessions
   int get adminTabIndex => _adminTabIndex;
 
+  DateTime _submittedSessionsDate = DateTime.now();
+  DateTime get submittedSessionsDate => _submittedSessionsDate;
+
   List<Map<String, dynamic>> _submittedSessions = [];
   List<Map<String, dynamic>> get submittedSessions => List.unmodifiable(_submittedSessions);
 
   List<AttendanceAuditModel> _sessionAudits = [];
   List<AttendanceAuditModel> get sessionAudits => List.unmodifiable(_sessionAudits);
 
+  bool _isExistingSessionSubmitted = false;
+  bool get isExistingSessionSubmitted => _isExistingSessionSubmitted;
+
+  String _existingSubmitterName = '';
+  String get existingSubmitterName => _existingSubmitterName;
+
+  String _existingSubmitterRole = '';
+  String get existingSubmitterRole => _existingSubmitterRole;
+
+  String _existingSubmitterUid = '';
+  String get existingSubmitterUid => _existingSubmitterUid;
+
+  bool _existingTeacherEditUsed = false;
+  bool get existingTeacherEditUsed => _existingTeacherEditUsed;
+
   int get totalStudents => _students.length;
 
   int get presentCount =>
-      _attendanceMap.values.where((status) => status == 'present').length;
+      _attendanceMap.values.where((status) => status.toLowerCase() == 'present').length;
 
   int get absentCount =>
-      _attendanceMap.values.where((status) => status == 'absent').length;
+      _attendanceMap.values.where((status) => status.toLowerCase() == 'absent').length;
 
   double get attendancePercentage {
     if (totalStudents == 0) return 0.0;
@@ -82,12 +103,23 @@ class AttendanceViewModel extends ChangeNotifier {
         '${_selectedDate.day.toString().padLeft(2, '0')}';
   }
 
+  String get formattedSubmittedSessionsDate {
+    return '${_submittedSessionsDate.year.toString().padLeft(4, '0')}-'
+        '${_submittedSessionsDate.month.toString().padLeft(2, '0')}-'
+        '${_submittedSessionsDate.day.toString().padLeft(2, '0')}';
+  }
+
   void setAdminTab(int index) {
     _adminTabIndex = index;
     if (index == 1) {
       loadSubmittedSessions();
     }
     notifyListeners();
+  }
+
+  void setSubmittedSessionsDate(DateTime date) {
+    _submittedSessionsDate = date;
+    loadSubmittedSessions();
   }
 
   Future<void> loadSubmittedSessions() async {
@@ -103,9 +135,13 @@ class AttendanceViewModel extends ChangeNotifier {
       final classMap = {for (var c in allClasses) c.classId: c.className};
       final teacherMap = {for (var t in allTeachers) t.teacherId: t.name};
 
+      // Filter by selected date
+      final filterDateStr = formattedSubmittedSessionsDate;
+      final filteredAttendance = allAttendance.where((a) => a.date == filterDateStr).toList();
+
       // Group by classId_date
       Map<String, List<AttendanceModel>> group = {};
-      for (var att in allAttendance) {
+      for (var att in filteredAttendance) {
         final key = '${att.classId}_${att.date}';
         group.putIfAbsent(key, () => []).add(att);
       }
@@ -116,7 +152,9 @@ class AttendanceViewModel extends ChangeNotifier {
         final date = attList.first.date;
         final teacherUid = attList.first.markedBy;
         final className = classMap[classId] ?? 'Class $classId';
-        final teacherName = teacherMap[teacherUid] ?? 'Teacher';
+        final teacherName = attList.first.markedByName.isNotEmpty
+            ? attList.first.markedByName
+            : (teacherMap[teacherUid] ?? 'Teacher');
 
         int present = attList.where((a) => a.status.toLowerCase() == 'present').length;
         int absent = attList.where((a) => a.status.toLowerCase() == 'absent').length;
@@ -140,7 +178,6 @@ class AttendanceViewModel extends ChangeNotifier {
         });
       });
 
-      sessions.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
       _submittedSessions = sessions;
       _isLoading = false;
       notifyListeners();
@@ -168,12 +205,6 @@ class AttendanceViewModel extends ChangeNotifier {
     required StudentModel student,
     required String className,
   }) async {
-    if (reason.trim().isEmpty) {
-      _errorMessage = 'Reason is required to change attendance.';
-      notifyListeners();
-      return false;
-    }
-
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
       _errorMessage = 'Admin session not found.';
@@ -189,6 +220,25 @@ class AttendanceViewModel extends ChangeNotifier {
     }
 
     try {
+      // Resolve student's real name from _studentRepository if student.name is dummy/missing
+      String studentRealName = student.name;
+      if (studentRealName.isEmpty || studentRealName.startsWith('Student ') || studentRealName == attendance.studentId) {
+        final allStudents = await _studentRepository.getStudents();
+        final realStudent = allStudents.firstWhere(
+          (s) => s.studentId == attendance.studentId,
+          orElse: () => student,
+        );
+        if (realStudent.name.isNotEmpty && !realStudent.name.startsWith('Student ')) {
+          studentRealName = realStudent.name;
+        } else {
+          studentRealName = 'Student (${attendance.studentId})';
+        }
+      }
+
+      final adminName = (currentUser.displayName != null && currentUser.displayName!.trim().isNotEmpty)
+          ? currentUser.displayName!.trim()
+          : 'Admin';
+
       final auditId = '${attendance.classId}_${attendance.studentId}_${attendance.date}_${DateTime.now().millisecondsSinceEpoch}';
       final audit = AttendanceAuditModel(
         auditId: auditId,
@@ -200,7 +250,7 @@ class AttendanceViewModel extends ChangeNotifier {
         newStatus: newStatus,
         changedByUid: currentUser.uid,
         changedByRole: 'admin',
-        changedByName: currentUser.displayName ?? 'Admin',
+        changedByName: adminName,
         reason: reason.trim(),
         teacherUid: attendance.markedBy,
       );
@@ -211,14 +261,16 @@ class AttendanceViewModel extends ChangeNotifier {
         adminChangeReason: reason.trim(),
       );
 
-      final notificationId = 'notif_${DateTime.now().millisecondsSinceEpoch}';
+      final notificationId = 'notif_${attendance.classId}_${attendance.date}_${attendance.studentId}_${oldStatus.toLowerCase()}_${newStatus.toLowerCase()}';
+      final formattedMsg = '$studentRealName — $className, ${attendance.date}. Attendance changed from ${oldStatus.toUpperCase()} to ${newStatus.toUpperCase()} by $adminName.${reason.trim().isNotEmpty ? " Reason: ${reason.trim()}" : ""}';
+
       final notification = NotificationModel(
         notificationId: notificationId,
         recipientId: attendance.markedBy,
         recipientRole: 'teacher',
         type: 'attendance_updated',
         title: 'Attendance Updated by Admin',
-        message: 'Admin updated attendance for ${student.name} in Class $className on ${attendance.date}: ${oldStatus.toUpperCase()} → ${newStatus.toUpperCase()}.',
+        message: formattedMsg,
         referenceId: '${attendance.classId}_${attendance.date}',
         referenceType: 'attendance',
         isRead: false,
@@ -314,15 +366,36 @@ class AttendanceViewModel extends ChangeNotifier {
 
       _attendanceMap.clear();
 
+      final sessionExists = await _attendanceRepository.checkAttendanceSessionExists(
+        _selectedClass!.classId,
+        formattedDate,
+      );
       final existingAttendance = await _attendanceRepository
           .getAttendanceForClassAndDate(_selectedClass!.classId, formattedDate);
 
-      for (var att in existingAttendance) {
-        _attendanceMap[att.studentId] = att.status;
-      }
+      if (sessionExists || existingAttendance.isNotEmpty) {
+        _isExistingSessionSubmitted = true;
+        if (existingAttendance.isNotEmpty) {
+          final first = existingAttendance.first;
+          _existingSubmitterName = first.markedByName.isNotEmpty ? first.markedByName : 'a teacher/admin';
+          _existingSubmitterRole = first.markedByRole;
+          _existingSubmitterUid = first.markedBy;
+          _existingTeacherEditUsed = first.teacherEditUsed;
 
-      for (var student in _students) {
-        _attendanceMap.putIfAbsent(student.studentId, () => 'present');
+          for (var att in existingAttendance) {
+            _attendanceMap[att.studentId] = att.status.toLowerCase();
+          }
+        }
+      } else {
+        _isExistingSessionSubmitted = false;
+        _existingSubmitterName = '';
+        _existingSubmitterRole = '';
+        _existingSubmitterUid = '';
+        _existingTeacherEditUsed = false;
+
+        for (var student in _students) {
+          _attendanceMap[student.studentId] = 'present';
+        }
       }
 
       _isLoading = false;
@@ -335,7 +408,7 @@ class AttendanceViewModel extends ChangeNotifier {
   }
 
   void setStatus(String studentId, String status) {
-    _attendanceMap[studentId] = status;
+    _attendanceMap[studentId] = status.toLowerCase();
     notifyListeners();
   }
 
@@ -353,7 +426,7 @@ class AttendanceViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> saveAttendance(String currentUserId) async {
+  Future<bool> saveAttendance(String currentUserId, {String currentUserName = 'User', String userRole = 'teacher', bool isTeacherOneTimeEdit = false}) async {
     if (_selectedClass == null) {
       _errorMessage = 'No class selected.';
       notifyListeners();
@@ -406,10 +479,38 @@ class AttendanceViewModel extends ChangeNotifier {
           status: status,
           originalStatus: status,
           markedBy: currentUserId,
+          markedByRole: userRole,
+          markedByName: currentUserName,
         ));
       }
 
-      await _attendanceRepository.saveAttendanceBatch(batchList);
+      final sessionData = {
+        'sessionId': '${_selectedClass!.classId}_$formattedDate',
+        'classId': _selectedClass!.classId,
+        'className': _selectedClass!.className,
+        'date': formattedDate,
+        'submittedBy': currentUserId,
+        'submittedByRole': userRole,
+        'submittedByName': currentUserName,
+      };
+
+      await _attendanceRepository.saveAttendanceBatch(batchList, sessionData: sessionData);
+
+      if (userRole == 'teacher') {
+        final notificationId = 'notif_${DateTime.now().millisecondsSinceEpoch}';
+        final notification = NotificationModel(
+          notificationId: notificationId,
+          recipientId: 'admin',
+          recipientRole: 'admin',
+          type: 'attendance_submitted',
+          title: 'Attendance Submitted',
+          message: 'Teacher $currentUserName submitted attendance for Class ${_selectedClass!.className} on $formattedDate ($presentCount Present, $absentCount Absent).',
+          referenceId: '${_selectedClass!.classId}_$formattedDate',
+          referenceType: 'attendance',
+          isRead: false,
+        );
+        await _notificationRepository.createNotification(notification);
+      }
 
       await loadStudentsAndAttendance();
 
@@ -448,10 +549,10 @@ class StudentAttendanceViewModel extends ChangeNotifier {
   int get totalClasses => _attendanceHistory.length;
 
   int get presentCount =>
-      _attendanceHistory.where((a) => a.status == 'present').length;
+      _attendanceHistory.where((a) => a.status.toLowerCase() == 'present').length;
 
   int get absentCount =>
-      _attendanceHistory.where((a) => a.status == 'absent').length;
+      _attendanceHistory.where((a) => a.status.toLowerCase() == 'absent').length;
 
   double get attendancePercentage {
     if (totalClasses == 0) return 0.0;

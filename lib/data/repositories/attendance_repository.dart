@@ -10,9 +10,9 @@ class AttendanceRepository {
   AttendanceRepository({FirestoreService? firestoreService})
       : _firestoreService = firestoreService ?? FirestoreService();
 
-  Future<void> saveAttendanceBatch(List<AttendanceModel> attendanceList) async {
+  Future<void> saveAttendanceBatch(List<AttendanceModel> attendanceList, {Map<String, dynamic>? sessionData}) async {
     try {
-      await _firestoreService.saveAttendanceBatch(attendanceList);
+      await _firestoreService.saveAttendanceBatch(attendanceList, sessionData: sessionData);
     } on FirebaseException catch (e) {
       switch (e.code) {
         case 'permission-denied':
@@ -25,10 +25,7 @@ class AttendanceRepository {
           throw Exception("Attendance could not be saved. Please try again.");
         case 'already-exists':
           throw Exception(
-              "Attendance already exists for this date. Your changes have been updated.");
-        case 'not-found':
-          throw Exception(
-              "The selected attendance record could not be found. Please refresh and try again.");
+              "Attendance already exists for this date.");
         default:
           throw Exception(
               "Something went wrong while saving attendance. Please try again.");
@@ -38,6 +35,10 @@ class AttendanceRepository {
       throw Exception(
           "Something went wrong while saving attendance. Please try again.");
     }
+  }
+
+  Future<bool> checkAttendanceSessionExists(String classId, String date) async {
+    return await _firestoreService.checkAttendanceSessionExists(classId, date);
   }
 
   Future<List<AttendanceModel>> getAttendanceForClassAndDate(
