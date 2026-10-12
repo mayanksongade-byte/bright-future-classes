@@ -285,7 +285,6 @@ class FirestoreService {
     final snapshot = await _firestore
         .collection('attendance')
         .where('studentId', isEqualTo: studentId)
-        .orderBy('date', descending: true)
         .get();
     return snapshot.docs;
   }
@@ -618,5 +617,31 @@ class FirestoreService {
 
   Future<void> saveInstituteSettingsDocument(Map<String, dynamic> data) async {
     await _firestore.collection('settings').doc('app').set(data, SetOptions(merge: true));
+  }
+
+  // Holiday Document Methods
+  String generateHolidayId() {
+    return _firestore.collection('holidays').doc().id;
+  }
+
+  Future<void> saveHolidayDocument(
+      String holidayId, Map<String, dynamic> data) async {
+    await _firestore
+        .collection('holidays')
+        .doc(holidayId)
+        .set(data, SetOptions(merge: true));
+  }
+
+  Future<void> deleteHolidayDocument(String holidayId) async {
+    await _firestore.collection('holidays').doc(holidayId).delete();
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getHolidaysDocuments() async {
+    final snapshot = await _firestore.collection('holidays').get();
+    return snapshot.docs;
+  }
+
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> streamHolidaysDocuments() {
+    return _firestore.collection('holidays').snapshots().map((snapshot) => snapshot.docs);
   }
 }

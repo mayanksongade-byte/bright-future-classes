@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
+import '../../../data/models/attendance_model.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/complaint_model.dart';
 import '../../../data/models/mark_model.dart';
@@ -123,22 +124,54 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
 
       // 3. Resolve Attendance
       try {
-        final attendanceList =
+        List<AttendanceModel> attendanceList =
             await _attendanceRepository.getAttendanceForStudent(_student.studentId);
-        int present = 0;
-        int absent = 0;
+
+        if (_student.userId != null &&
+            _student.userId!.isNotEmpty &&
+            _student.userId != _student.studentId) {
+          final additionalList =
+              await _attendanceRepository.getAttendanceForStudent(_student.userId!);
+          final Map<String, AttendanceModel> mergedMap = {};
+          for (var a in attendanceList) {
+            mergedMap[a.attendanceId] = a;
+          }
+          for (var a in additionalList) {
+            mergedMap[a.attendanceId] = a;
+          }
+          attendanceList = mergedMap.values.toList();
+        }
+
+        // Map distinct dates (yyyy-MM-dd) to attendance status
+        final Map<String, String> dateStatusMap = {};
         for (var att in attendanceList) {
-          if (att.status.toLowerCase() == 'present') {
-            present++;
-          } else if (att.status.toLowerCase() == 'absent') {
-            absent++;
+          final dateKey = att.date.trim();
+          if (dateKey.isNotEmpty) {
+            dateStatusMap[dateKey] = att.status.toLowerCase();
           }
         }
-        _attendancePresent = present;
-        _attendanceAbsent = absent;
-        final total = present + absent;
-        _attendancePercentage = total > 0 ? (present / total) * 100 : 0.0;
-      } catch (_) {}
+
+        int present = 0;
+        int absent = 0;
+        dateStatusMap.forEach((date, status) {
+          if (status == 'present') {
+            present++;
+          } else if (status == 'absent') {
+            absent++;
+          }
+        });
+
+        if (mounted) {
+          setState(() {
+            _attendancePresent = present;
+            _attendanceAbsent = absent;
+            final total = present + absent;
+            _attendancePercentage = total > 0 ? (present / total) * 100.0 : 0.0;
+          });
+        }
+      } catch (e) {
+        debugPrint('[StudentDetailsScreen] Failed to load student attendance summary: $e');
+      }
 
       // 4. Resolve Fees (Admin Only)
       if (_isAdmin) {

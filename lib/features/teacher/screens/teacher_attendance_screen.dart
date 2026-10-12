@@ -5,10 +5,12 @@ import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/attendance_audit_model.dart';
 import '../../../data/models/attendance_model.dart';
 import '../../../data/models/class_model.dart';
+import '../../../data/models/holiday_model.dart';
 import '../../../data/models/notification_model.dart';
 import '../../../data/models/student_model.dart';
 import '../../../data/models/teacher_model.dart';
 import '../../../data/repositories/attendance_repository.dart';
+import '../../../data/repositories/holiday_repository.dart';
 import '../../../data/repositories/notification_repository.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/firestore_service.dart';
@@ -25,10 +27,12 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
   final AttendanceRepository _attendanceRepository = AttendanceRepository();
+  final HolidayRepository _holidayRepository = HolidayRepository();
 
   bool _isLoading = true;
   List<ClassModel> _assignedClasses = [];
   Map<String, String> _classNameToIdMap = {}; // className -> classId
+  List<HolidayModel> _holidays = [];
 
   String _selectedClassName = '';
   DateTime _selectedDate = DateTime.now();
@@ -50,12 +54,24 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   void initState() {
     super.initState();
     _loadTeacherClassesAndAttendance();
+    _loadHolidays();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHolidays() async {
+    try {
+      final list = await _holidayRepository.getHolidays();
+      if (mounted) {
+        setState(() {
+          _holidays = list;
+        });
+      }
+    } catch (_) {}
   }
 
   String get _selectedClassId => _classNameToIdMap[_selectedClassName] ?? '';
@@ -83,6 +99,16 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     final d = _historyDate.day.toString().padLeft(2, '0');
     final m = months[_historyDate.month - 1];
     return '$d $m ${_historyDate.year}';
+  }
+
+  HolidayModel? _getHolidayForClassAndDate(String classId, String dateStr) {
+    if (classId.isEmpty || dateStr.isEmpty) return null;
+    for (var h in _holidays) {
+      if (h.includesDate(dateStr) && h.appliesToClass(classId)) {
+        return h;
+      }
+    }
+    return null;
   }
 
   Future<void> _loadTeacherClassesAndAttendance() async {
@@ -344,7 +370,8 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   }
 
   void _markAllPresent() {
-    if (_isAttendanceSubmitted) return;
+    final activeHoliday = _getHolidayForClassAndDate(_selectedClassId, _formattedDateString);
+    if (_isAttendanceSubmitted || activeHoliday != null) return;
     setState(() {
       for (var s in _students) {
         s['status'] = 'Present';
@@ -353,7 +380,8 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   }
 
   void _showConfirmationDialog() {
-    if (_isAttendanceSubmitted || _students.isEmpty) return;
+    final activeHoliday = _getHolidayForClassAndDate(_selectedClassId, _formattedDateString);
+    if (_isAttendanceSubmitted || _students.isEmpty || activeHoliday != null) return;
 
     showDialog(
       context: context,
@@ -459,7 +487,9 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   }
 
   Future<void> _saveAttendance() async {
-    if (_isAttendanceSubmitted) return;
+    final activeHoliday = _getHolidayForClassAndDate(_selectedClassId, _formattedDateString);
+    if (_isAttendanceSubmitted || activeHoliday != null) return;
+
     final classId = _selectedClassId;
     final currentUser = _authService.currentUser;
     if (classId.isEmpty || currentUser == null) return;
@@ -560,6 +590,8 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     final classNames = _assignedClasses.isNotEmpty
         ? _assignedClasses.map((c) => c.className).toList()
         : ['No Classes Assigned'];
+
+    final HolidayModel? markTabHoliday = _getHolidayForClassAndDate(_selectedClassId, _formattedDateString);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -665,7 +697,34 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                           // MARK ATTENDANCE TAB
                           _buildControlsCard(classNames),
                           const SizedBox(height: 16),
-                          if (_isAttendanceSubmitted) ...[
+                          if (markTabHoliday != null) ...[
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppColors.border.withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.textSecondary.withValues(alpha: 0.4)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.event_available_rounded, color: AppColors.textMain, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      '${markTabHoliday.title} (${markTabHoliday.type}) is scheduled for $_selectedClassName on $_formattedDateString. Attendance is not required.',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textMain,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ] else if (_isAttendanceSubmitted) ...[
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(12),
@@ -697,7 +756,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                           const SizedBox(height: 20),
 
                           // Students List Header Row with Mark All Present button
-                          _buildStudentsHeaderRow(),
+                          _buildStudentsHeaderRow(markTabHoliday != null),
                           const SizedBox(height: 12),
 
                           // Search Field
@@ -732,7 +791,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                                       const SizedBox(height: 10),
                                   itemBuilder: (context, index) {
                                     final student = _filteredStudents[index];
-                                    return _buildStudentAttendanceTile(student);
+                                    return _buildStudentAttendanceTile(student, isHoliday: markTabHoliday != null);
                                   },
                                 ),
                           const SizedBox(height: 24),
@@ -747,7 +806,26 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              if (_isAttendanceSubmitted)
+                              if (markTabHoliday != null)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.border.withValues(alpha: 0.3),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: AppColors.textSecondary.withValues(alpha: 0.4)),
+                                  ),
+                                  child: Text(
+                                    'Official Holiday (${markTabHoliday.title})',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textMain,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                )
+                              else if (_isAttendanceSubmitted)
                                 Container(
                                   width: double.infinity,
                                   padding: const EdgeInsets.all(14),
@@ -927,7 +1005,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     );
   }
 
-  Widget _buildStudentsHeaderRow() {
+  Widget _buildStudentsHeaderRow(bool isHoliday) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -939,7 +1017,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
             color: AppColors.textMain,
           ),
         ),
-        if (!_isAttendanceSubmitted)
+        if (!_isAttendanceSubmitted && !isHoliday)
           ElevatedButton.icon(
             onPressed: _markAllPresent,
             icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
@@ -958,15 +1036,15 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.lightEmerald,
+              color: isHoliday ? AppColors.border.withValues(alpha: 0.3) : AppColors.lightEmerald,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Text(
-              'Locked',
+            child: Text(
+              isHoliday ? 'Holiday' : 'Locked',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: AppColors.darkEmerald,
+                color: isHoliday ? AppColors.textMain : AppColors.darkEmerald,
               ),
             ),
           ),
@@ -1029,7 +1107,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     );
   }
 
-  Widget _buildStudentAttendanceTile(Map<String, dynamic> student) {
+  Widget _buildStudentAttendanceTile(Map<String, dynamic> student, {bool isHoliday = false}) {
     final String currentStatus = student['status'] as String;
     final bool isPresent = currentStatus == 'Present';
 
@@ -1085,6 +1163,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                 'Present',
                 AppColors.success,
                 isPresent,
+                isDisabled: isHoliday || _isAttendanceSubmitted,
               ),
               const SizedBox(width: 8),
               _buildAttendanceToggleButton(
@@ -1092,6 +1171,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                 'Absent',
                 AppColors.error,
                 !isPresent,
+                isDisabled: isHoliday || _isAttendanceSubmitted,
               ),
             ],
           ),
@@ -1104,10 +1184,11 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     Map<String, dynamic> student,
     String statusOption,
     Color activeColor,
-    bool isSelected,
-  ) {
+    bool isSelected, {
+    bool isDisabled = false,
+  }) {
     return GestureDetector(
-      onTap: _isAttendanceSubmitted
+      onTap: isDisabled
           ? null
           : () {
               setState(() {
@@ -1144,12 +1225,55 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       _historyClassName = classNames.first;
     }
 
+    final HolidayModel? historyHoliday = _getHolidayForClassAndDate(_historyClassId, _formattedHistoryDateString);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1. Class & Calendar Selectors
         _buildHistorySelectors(classNames),
         const SizedBox(height: 16),
+
+        if (historyHoliday != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.border.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.textSecondary.withValues(alpha: 0.4)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.event_available_rounded, color: AppColors.textMain, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Official Holiday: ${historyHoliday.title} (${historyHoliday.type})',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textMain,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (historyHoliday.note.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Note: ${historyHoliday.note}',
+                    style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.textSecondary),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
 
         // 2. Attendance History Heading & List
         Row(
@@ -1187,7 +1311,9 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                       border: Border.all(color: AppColors.border),
                     ),
                     child: Text(
-                      'No attendance records found for $_displayHistoryDateString.',
+                      historyHoliday != null
+                          ? 'Official Holiday scheduled for this date.'
+                          : 'No attendance records found for $_displayHistoryDateString.',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,

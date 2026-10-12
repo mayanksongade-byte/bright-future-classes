@@ -70,9 +70,11 @@ class AttendanceRepository {
     try {
       final docs =
           await _firestoreService.getAttendanceDocumentsByStudent(studentId);
-      return docs
+      final list = docs
           .map((doc) => AttendanceModel.fromMap(doc.data(), doc.id))
           .toList();
+      list.sort((a, b) => b.date.compareTo(a.date));
+      return list;
     } on FirebaseException catch (e) {
       switch (e.code) {
         case 'permission-denied':

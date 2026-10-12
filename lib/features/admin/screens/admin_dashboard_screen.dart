@@ -6,6 +6,7 @@ import '../../classes/screens/add_class_screen.dart';
 import '../../classes/screens/classes_screen.dart';
 import '../../complaints/screens/complaints_list_screen.dart';
 import '../../fees/screens/fees_screen.dart';
+import '../../holidays/screens/admin_holidays_screen.dart';
 import '../../homework/screens/homework_list_screen.dart';
 import '../../notices/screens/notices_list_screen.dart';
 import '../../reports/screens/reports_screen.dart';
@@ -273,6 +274,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               await Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (context) => const SettingsScreen(),
+                                ),
+                              );
+                              _viewModel.loadDashboardData();
+                            },
+                          ),
+                          _buildStatCard(
+                            title: 'Holiday Calendar',
+                            value: 'Holidays',
+                            icon: Icons.calendar_month_outlined,
+                            iconColor: AppColors.primaryEmerald,
+                            bgColor: AppColors.lightEmerald,
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const AdminHolidaysScreen(),
                                 ),
                               );
                               _viewModel.loadDashboardData();
