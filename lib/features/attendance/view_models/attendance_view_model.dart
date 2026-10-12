@@ -10,6 +10,7 @@ import '../../../data/repositories/class_repository.dart';
 import '../../../data/repositories/notification_repository.dart';
 import '../../../data/repositories/student_repository.dart';
 import '../../../data/repositories/teacher_repository.dart';
+import '../../../data/services/firestore_service.dart';
 
 class AttendanceViewModel extends ChangeNotifier {
   final AttendanceRepository _attendanceRepository;
@@ -17,6 +18,7 @@ class AttendanceViewModel extends ChangeNotifier {
   final StudentRepository _studentRepository;
   final TeacherRepository _teacherRepository;
   final NotificationRepository _notificationRepository;
+  final FirestoreService _firestoreService;
 
   AttendanceViewModel({
     AttendanceRepository? attendanceRepository,
@@ -24,11 +26,13 @@ class AttendanceViewModel extends ChangeNotifier {
     StudentRepository? studentRepository,
     TeacherRepository? teacherRepository,
     NotificationRepository? notificationRepository,
+    FirestoreService? firestoreService,
   })  : _attendanceRepository = attendanceRepository ?? AttendanceRepository(),
         _classRepository = classRepository ?? ClassRepository(),
         _studentRepository = studentRepository ?? StudentRepository(),
         _teacherRepository = teacherRepository ?? TeacherRepository(),
-        _notificationRepository = notificationRepository ?? NotificationRepository();
+        _notificationRepository = notificationRepository ?? NotificationRepository(),
+        _firestoreService = firestoreService ?? FirestoreService();
 
   List<ClassModel> _classes = [];
   List<ClassModel> get classes => List.unmodifiable(_classes);
@@ -198,6 +202,43 @@ class AttendanceViewModel extends ChangeNotifier {
     }
   }
 
+  Future<String> resolveStudentRealName(String attendanceStudentId, {String? passedName}) async {
+    if (passedName != null &&
+        passedName.trim().isNotEmpty &&
+        !passedName.startsWith('Student ') &&
+        !passedName.startsWith('Student (') &&
+        passedName.trim() != attendanceStudentId.trim()) {
+      return passedName.trim();
+    }
+
+    try {
+      final studentDocs = await _firestoreService.getStudentsDocuments();
+      for (var doc in studentDocs) {
+        final data = doc.data();
+        final docId = doc.id;
+        final mapStudentId = data['studentId'] as String? ?? '';
+        final name = data['name'] as String? ??
+            data['fullName'] as String? ??
+            data['studentName'] as String? ??
+            '';
+
+        if (name.isNotEmpty && !name.startsWith('Student ')) {
+          final target = attendanceStudentId.trim().toUpperCase();
+          if (docId.trim().toUpperCase() == target ||
+              mapStudentId.trim().toUpperCase() == target) {
+            debugPrint('[StudentNameResolver] SUCCESS: Resolved real student name "$name" for studentId "$attendanceStudentId".');
+            return name;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[StudentNameResolver] ERROR: Exception resolving student name for ID "$attendanceStudentId": $e');
+    }
+
+    debugPrint('[StudentNameResolver] DIAGNOSTIC WARNING: Could not match student record in Firestore for attendance.studentId: "$attendanceStudentId".');
+    return 'Student ($attendanceStudentId)';
+  }
+
   Future<bool> changeStudentAttendanceByAdmin({
     required AttendanceModel attendance,
     required String newStatus,
@@ -220,20 +261,7 @@ class AttendanceViewModel extends ChangeNotifier {
     }
 
     try {
-      // Resolve student's real name from _studentRepository if student.name is dummy/missing
-      String studentRealName = student.name;
-      if (studentRealName.isEmpty || studentRealName.startsWith('Student ') || studentRealName == attendance.studentId) {
-        final allStudents = await _studentRepository.getStudents();
-        final realStudent = allStudents.firstWhere(
-          (s) => s.studentId == attendance.studentId,
-          orElse: () => student,
-        );
-        if (realStudent.name.isNotEmpty && !realStudent.name.startsWith('Student ')) {
-          studentRealName = realStudent.name;
-        } else {
-          studentRealName = 'Student (${attendance.studentId})';
-        }
-      }
+      final studentRealName = await resolveStudentRealName(attendance.studentId, passedName: student.name);
 
       final adminName = (currentUser.displayName != null && currentUser.displayName!.trim().isNotEmpty)
           ? currentUser.displayName!.trim()

@@ -103,16 +103,8 @@ class FirestoreService {
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getStudentsDocuments() async {
-    try {
-      final snapshot = await _firestore
-          .collection('students')
-          .orderBy('createdAt', descending: true)
-          .get();
-      return snapshot.docs;
-    } catch (_) {
-      final snapshot = await _firestore.collection('students').get();
-      return snapshot.docs;
-    }
+    final snapshot = await _firestore.collection('students').get();
+    return snapshot.docs;
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getStudentsDocumentsByClassId(String classId) async {
@@ -567,11 +559,13 @@ class FirestoreService {
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      getNotificationsDocumentsForRecipient(String recipientId) async {
-    final snapshot = await _firestore
-        .collection('notifications')
-        .where('recipientId', isEqualTo: recipientId)
-        .get();
+      getNotificationsDocumentsForRecipient(String recipientId, {String? userRole}) async {
+    final isAdmin = userRole?.toLowerCase() == 'admin';
+    final query = isAdmin
+        ? _firestore.collection('notifications').where('recipientRole', isEqualTo: 'admin')
+        : _firestore.collection('notifications').where('recipientId', isEqualTo: recipientId);
+
+    final snapshot = await query.get();
     final list = snapshot.docs;
     list.sort((a, b) {
       final rawA = a.data()['createdAt'];
@@ -584,12 +578,13 @@ class FirestoreService {
   }
 
   Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      streamNotificationsDocumentsForRecipient(String recipientId) {
-    return _firestore
-        .collection('notifications')
-        .where('recipientId', isEqualTo: recipientId)
-        .snapshots()
-        .map((snapshot) {
+      streamNotificationsDocumentsForRecipient(String recipientId, {String? userRole}) {
+    final isAdmin = userRole?.toLowerCase() == 'admin';
+    final query = isAdmin
+        ? _firestore.collection('notifications').where('recipientRole', isEqualTo: 'admin')
+        : _firestore.collection('notifications').where('recipientId', isEqualTo: recipientId);
+
+    return query.snapshots().map((snapshot) {
       final list = snapshot.docs.toList();
       list.sort((a, b) {
         final rawA = a.data()['createdAt'];

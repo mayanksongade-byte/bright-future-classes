@@ -7,6 +7,7 @@ import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/attendance_model.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/student_model.dart';
+import '../../../data/repositories/student_repository.dart';
 import '../view_models/attendance_view_model.dart';
 
 class AdminAttendanceScreen extends StatefulWidget {
@@ -933,12 +934,26 @@ class _SessionDetailsModalContent extends StatefulWidget {
 }
 
 class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent> {
+  final StudentRepository _studentRepository = StudentRepository();
+  Map<String, String> _studentNamesMap = {};
   String? _modalSuccessMessage;
 
   @override
   void initState() {
     super.initState();
     widget.viewModel.addListener(_onViewModelChanged);
+    _loadStudentNames();
+  }
+
+  Future<void> _loadStudentNames() async {
+    try {
+      final students = await _studentRepository.getStudents();
+      if (mounted) {
+        setState(() {
+          _studentNamesMap = {for (var s in students) s.studentId: s.name};
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -960,6 +975,7 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
     required Map<String, dynamic> session,
   }) {
     final reasonController = TextEditingController();
+    final studentRealName = _studentNamesMap[attendance.studentId] ?? 'Student (${attendance.studentId})';
 
     showDialog(
       context: context,
@@ -974,7 +990,10 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Student ID: ${attendance.studentId}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text('Student: $studentRealName', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textMain)),
+              const SizedBox(height: 2),
+              Text('Student ID: ${attendance.studentId}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
               Text('Class: $className · Date: ${attendance.date}'),
               const SizedBox(height: 12),
               Text('Current Status: ${attendance.status.toUpperCase()}'),
@@ -1003,7 +1022,7 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
                 final student = StudentModel(
                   studentId: attendance.studentId,
                   userId: '',
-                  name: 'Student ${attendance.studentId}',
+                  name: studentRealName,
                   phone: '',
                   parentName: '',
                   parentPhone: '',
@@ -1112,12 +1131,15 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
                         separatorBuilder: (context, index) => const Divider(height: 1, color: AppColors.border),
                         itemBuilder: (context, index) {
                           final audit = audits[index];
+                          final realStudentName = _studentNamesMap[audit.studentId] ?? 'Student (${audit.studentId})';
+
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Student ID: ${audit.studentId}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                                Text(realStudentName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textMain)),
+                                Text('Student ID: ${audit.studentId}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                                 const SizedBox(height: 2),
                                 Text('${audit.oldStatus.toUpperCase()} → ${audit.newStatus.toUpperCase()}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primaryEmerald)),
                                 const SizedBox(height: 2),
@@ -1288,6 +1310,7 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
                   itemBuilder: (context, index) {
                     final att = records[index];
                     final bool isPres = att.status.toLowerCase() == 'present';
+                    final studentRealName = _studentNamesMap[att.studentId] ?? 'Student (${att.studentId})';
 
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1299,7 +1322,7 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
                                 ? AppColors.lightEmerald
                                 : AppColors.error.withValues(alpha: 0.1),
                             child: Text(
-                              att.studentId.isNotEmpty ? att.studentId[0] : 'S',
+                              studentRealName.isNotEmpty ? studentRealName[0] : 'S',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
@@ -1315,11 +1338,18 @@ class _SessionDetailsModalContentState extends State<_SessionDetailsModalContent
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Student ID: ${att.studentId}',
+                                  studentRealName,
                                   style: const TextStyle(
                                     fontSize: 14,
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w700,
                                     color: AppColors.textMain,
+                                  ),
+                                ),
+                                Text(
+                                  'ID: ${att.studentId}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
                                   ),
                                 ),
                                 if (att.isAdminChanged)

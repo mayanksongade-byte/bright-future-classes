@@ -20,18 +20,18 @@ class NotificationService {
   }
 
   Future<List<NotificationModel>> getNotificationsForRecipient(
-      String recipientId) async {
+      String recipientId, {String? userRole}) async {
     final docs =
-        await _firestoreService.getNotificationsDocumentsForRecipient(recipientId);
+        await _firestoreService.getNotificationsDocumentsForRecipient(recipientId, userRole: userRole);
     return docs
         .map((doc) => NotificationModel.fromMap(doc.data(), doc.id))
         .toList();
   }
 
   Stream<List<NotificationModel>> streamNotificationsForRecipient(
-      String recipientId) {
+      String recipientId, {String? userRole}) {
     return _firestoreService
-        .streamNotificationsDocumentsForRecipient(recipientId)
+        .streamNotificationsDocumentsForRecipient(recipientId, userRole: userRole)
         .map((docs) => docs
             .map((doc) => NotificationModel.fromMap(doc.data(), doc.id))
             .toList());

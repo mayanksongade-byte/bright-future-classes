@@ -21,9 +21,9 @@ class NotificationRepository {
   }
 
   Future<List<NotificationModel>> getNotificationsForRecipient(
-      String recipientId) async {
+      String recipientId, {String? userRole}) async {
     try {
-      return await _notificationService.getNotificationsForRecipient(recipientId);
+      return await _notificationService.getNotificationsForRecipient(recipientId, userRole: userRole);
     } catch (e) {
       if (e is Exception) rethrow;
       throw Exception('Failed to load notifications.');
@@ -31,8 +31,8 @@ class NotificationRepository {
   }
 
   Stream<List<NotificationModel>> streamNotificationsForRecipient(
-      String recipientId) {
-    return _notificationService.streamNotificationsForRecipient(recipientId);
+      String recipientId, {String? userRole}) {
+    return _notificationService.streamNotificationsForRecipient(recipientId, userRole: userRole);
   }
 
   Future<NotificationModel?> getNotificationById(String notificationId) async {

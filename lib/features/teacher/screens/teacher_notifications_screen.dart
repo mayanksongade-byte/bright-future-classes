@@ -7,6 +7,7 @@ import '../../../data/models/notification_model.dart';
 import '../../../data/repositories/attendance_repository.dart';
 import '../../../data/repositories/notification_repository.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/firestore_service.dart';
 
 class TeacherNotificationsScreen extends StatefulWidget {
   const TeacherNotificationsScreen({super.key});
@@ -20,6 +21,7 @@ class _TeacherNotificationsScreenState
     extends State<TeacherNotificationsScreen> {
   final NotificationRepository _notificationRepository = NotificationRepository();
   final AttendanceRepository _attendanceRepository = AttendanceRepository();
+  final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
 
   Future<void> _markAsRead(NotificationModel notif) async {
@@ -44,8 +46,55 @@ class _TeacherNotificationsScreenState
         final attendanceRecords = await _attendanceRepository.getAttendanceForClassAndDate(classId, date);
         final audits = await _attendanceRepository.getAuditsForClassAndDate(classId, date);
 
+        // Fetch student names using class-scoped query to satisfy Teacher Firestore Security Rules
+        final Map<String, String> studentNamesMap = {};
+        try {
+          final studentDocs = await _firestoreService.getStudentsDocumentsByClassId(classId);
+          for (var doc in studentDocs) {
+            final data = doc.data();
+            final docId = doc.id;
+            final mapStudentId = data['studentId'] as String? ?? '';
+            final name = data['name'] as String? ?? data['fullName'] as String? ?? '';
+
+            if (name.isNotEmpty && !name.startsWith('Student ')) {
+              studentNamesMap[docId] = name;
+              studentNamesMap[docId.trim().toUpperCase()] = name;
+              if (mapStudentId.isNotEmpty) {
+                studentNamesMap[mapStudentId] = name;
+                studentNamesMap[mapStudentId.trim().toUpperCase()] = name;
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('[TeacherNotificationsScreen] Error loading class student names for classId "$classId": $e');
+        }
+
+        // Fallback: If map is still empty, try general students list if permitted
+        if (studentNamesMap.isEmpty) {
+          try {
+            final allStudentDocs = await _firestoreService.getStudentsDocuments();
+            for (var doc in allStudentDocs) {
+              final data = doc.data();
+              final docId = doc.id;
+              final mapStudentId = data['studentId'] as String? ?? '';
+              final name = data['name'] as String? ?? data['fullName'] as String? ?? '';
+
+              if (name.isNotEmpty && !name.startsWith('Student ')) {
+                studentNamesMap[docId] = name;
+                studentNamesMap[docId.trim().toUpperCase()] = name;
+                if (mapStudentId.isNotEmpty) {
+                  studentNamesMap[mapStudentId] = name;
+                  studentNamesMap[mapStudentId.trim().toUpperCase()] = name;
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('[TeacherNotificationsScreen] Error loading all student documents: $e');
+          }
+        }
+
         if (!mounted) return;
-        _showTeacherAttendanceAuditModal(classId, date, attendanceRecords, audits);
+        _showTeacherAttendanceAuditModal(classId, date, attendanceRecords, audits, studentNamesMap);
       }
     }
   }
@@ -108,7 +157,24 @@ class _TeacherNotificationsScreenState
   }
 
   void _showTeacherAttendanceAuditModal(
-      String classId, String date, List<AttendanceModel> records, List<AttendanceAuditModel> audits) {
+    String classId,
+    String date,
+    List<AttendanceModel> records,
+    List<AttendanceAuditModel> audits,
+    Map<String, String> studentNamesMap,
+  ) {
+    String resolveName(String studentId) {
+      if (studentNamesMap.containsKey(studentId)) {
+        return studentNamesMap[studentId]!;
+      }
+      final normalized = studentId.trim().toUpperCase();
+      if (studentNamesMap.containsKey(normalized)) {
+        return studentNamesMap[normalized]!;
+      }
+      debugPrint('[TeacherNotificationsScreen] DIAGNOSTIC: Student record not found for studentId: "$studentId" in classId "$classId". Total mapped keys: ${studentNamesMap.length}');
+      return 'Student ($studentId)';
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -181,25 +247,45 @@ class _TeacherNotificationsScreenState
                             const Divider(height: 1, color: AppColors.border),
                         itemBuilder: (context, index) {
                           final audit = audits[index];
+                          final realName = resolveName(audit.studentId);
+
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 6),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Student ID: ${audit.studentId}',
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w700, fontSize: 13)),
                                 Text(
-                                    '${audit.oldStatus.toUpperCase()} → ${audit.newStatus.toUpperCase()}',
-                                    style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.error)),
-                                Text('Reason: "${audit.reason}"',
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        fontStyle: FontStyle.italic,
-                                        color: AppColors.textMain)),
+                                  realName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                    color: AppColors.textMain,
+                                  ),
+                                ),
+                                Text(
+                                  'Student ID: ${audit.studentId}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${audit.oldStatus.toUpperCase()} → ${audit.newStatus.toUpperCase()}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.error,
+                                  ),
+                                ),
+                                Text(
+                                  'Reason: "${audit.reason.isNotEmpty ? audit.reason : 'No reason provided'}"',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontStyle: FontStyle.italic,
+                                    color: AppColors.textMain,
+                                  ),
+                                ),
                               ],
                             ),
                           );
@@ -226,6 +312,7 @@ class _TeacherNotificationsScreenState
                       itemBuilder: (context, index) {
                         final att = records[index];
                         final bool isPres = att.status.toLowerCase() == 'present';
+                        final realName = resolveName(att.studentId);
 
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -237,7 +324,7 @@ class _TeacherNotificationsScreenState
                                     ? AppColors.lightEmerald
                                     : AppColors.error.withValues(alpha: 0.1),
                                 child: Text(
-                                  att.studentId.isNotEmpty ? att.studentId[0] : 'S',
+                                  realName.isNotEmpty ? realName[0] : 'S',
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
@@ -253,11 +340,18 @@ class _TeacherNotificationsScreenState
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Student ID: ${att.studentId}',
+                                      realName,
                                       style: const TextStyle(
                                         fontSize: 14,
-                                        fontWeight: FontWeight.w600,
+                                        fontWeight: FontWeight.w700,
                                         color: AppColors.textMain,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Student ID: ${att.studentId}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSecondary,
                                       ),
                                     ),
                                     if (att.isAdminChanged)

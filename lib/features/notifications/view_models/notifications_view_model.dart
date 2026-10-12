@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../data/models/notification_model.dart';
 import '../../../data/repositories/notification_repository.dart';
+import '../../../data/services/firestore_service.dart';
 
 class NotificationsViewModel extends ChangeNotifier {
   final NotificationRepository _notificationRepository;
+  final FirestoreService _firestoreService;
 
-  NotificationsViewModel({NotificationRepository? notificationRepository})
-      : _notificationRepository =
-            notificationRepository ?? NotificationRepository();
+  NotificationsViewModel({
+    NotificationRepository? notificationRepository,
+    FirestoreService? firestoreService,
+  })  : _notificationRepository =
+            notificationRepository ?? NotificationRepository(),
+        _firestoreService = firestoreService ?? FirestoreService();
 
   List<NotificationModel> _notifications = [];
   bool _isLoading = false;
@@ -106,8 +111,11 @@ class NotificationsViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final userDoc = await _firestoreService.getUserDocument(user.uid);
+      final role = (userDoc?['role'] as String? ?? '').toLowerCase();
+
       _notifications =
-          await _notificationRepository.getNotificationsForRecipient(user.uid);
+          await _notificationRepository.getNotificationsForRecipient(user.uid, userRole: role);
       _isLoading = false;
       notifyListeners();
     } catch (e) {
