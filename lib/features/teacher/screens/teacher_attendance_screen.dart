@@ -33,9 +33,11 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   List<ClassModel> _assignedClasses = [];
   Map<String, String> _classNameToIdMap = {}; // className -> classId
   List<HolidayModel> _holidays = [];
+  List<AttendanceModel> _classAttendanceRecords = [];
 
   String _selectedClassName = '';
   DateTime _selectedDate = DateTime.now();
+  DateTime _focusedMonth = DateTime.now();
   int _activeTabIndex = 0; // 0 = Mark Attendance, 1 = History
 
   // Mark Attendance Tab State
@@ -49,6 +51,12 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   DateTime _historyDate = DateTime.now();
   List<Map<String, dynamic>> _realHistoryRecords = [];
   bool _isHistoryLoading = false;
+
+  static const List<String> _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const List<String> _months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
 
   @override
   void initState() {
@@ -77,6 +85,13 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   String get _selectedClassId => _classNameToIdMap[_selectedClassName] ?? '';
   String get _historyClassId => _classNameToIdMap[_historyClassName] ?? '';
 
+  bool get _isFutureSelectedDate {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final chosen = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    return chosen.isAfter(today);
+  }
+
   String get _formattedDateString {
     final y = _selectedDate.year.toString().padLeft(4, '0');
     final m = _selectedDate.month.toString().padLeft(2, '0');
@@ -92,13 +107,16 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   }
 
   String get _displayHistoryDateString {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
     final d = _historyDate.day.toString().padLeft(2, '0');
-    final m = months[_historyDate.month - 1];
+    final m = _months[_historyDate.month - 1].substring(0, 3);
     return '$d $m ${_historyDate.year}';
+  }
+
+  String _formatDateKey(DateTime d) {
+    final y = d.year.toString().padLeft(4, '0');
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '$y-$m-$day';
   }
 
   HolidayModel? _getHolidayForClassAndDate(String classId, String dateStr) {
@@ -109,6 +127,36 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       }
     }
     return null;
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2025),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+      });
+      await _loadStudentsAndAttendanceForSelectedClass();
+    }
+  }
+
+  Future<void> _pickHistoryDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _historyDate,
+      firstDate: DateTime(2025),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _historyDate = picked;
+      });
+      await _loadHistoryForClass();
+    }
   }
 
   Future<void> _loadTeacherClassesAndAttendance() async {
@@ -156,7 +204,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   }
 
   Future<void> _loadStudentsAndAttendanceForSelectedClass() async {
-    final classId = _selectedClassId;
+    final classId = _activeTabIndex == 0 ? _selectedClassId : _historyClassId;
     if (classId.isEmpty) return;
 
     setState(() {
@@ -164,6 +212,10 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     });
 
     try {
+      // Load all attendance records for this class (for calendar markers)
+      final allClassAttendance = await _attendanceRepository.getAttendanceForClass(classId);
+      _classAttendanceRecords = allClassAttendance;
+
       // 1. Load real students for class
       final studentDocs = await _firestoreService.getStudentsDocumentsByClassId(classId);
       final studentsList = studentDocs.map((doc) {
@@ -319,59 +371,9 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   int get _absentCount =>
       _students.where((s) => s['status'] == 'Absent').length;
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2025),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.primaryEmerald,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null) {
-      setState(() {
-        _selectedDate = picked;
-      });
-      await _loadStudentsAndAttendanceForSelectedClass();
-    }
-  }
-
-  Future<void> _pickHistoryDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _historyDate,
-      firstDate: DateTime(2025),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.primaryEmerald,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null) {
-      setState(() {
-        _historyDate = picked;
-      });
-      await _loadHistoryForClass();
-    }
-  }
-
   void _markAllPresent() {
     final activeHoliday = _getHolidayForClassAndDate(_selectedClassId, _formattedDateString);
-    if (_isAttendanceSubmitted || activeHoliday != null) return;
+    if (_isAttendanceSubmitted || activeHoliday != null || _isFutureSelectedDate) return;
     setState(() {
       for (var s in _students) {
         s['status'] = 'Present';
@@ -381,7 +383,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
 
   void _showConfirmationDialog() {
     final activeHoliday = _getHolidayForClassAndDate(_selectedClassId, _formattedDateString);
-    if (_isAttendanceSubmitted || _students.isEmpty || activeHoliday != null) return;
+    if (_isAttendanceSubmitted || _students.isEmpty || activeHoliday != null || _isFutureSelectedDate) return;
 
     showDialog(
       context: context,
@@ -488,7 +490,18 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
 
   Future<void> _saveAttendance() async {
     final activeHoliday = _getHolidayForClassAndDate(_selectedClassId, _formattedDateString);
-    if (_isAttendanceSubmitted || activeHoliday != null) return;
+    if (_isAttendanceSubmitted || activeHoliday != null || _isFutureSelectedDate) {
+      if (_isFutureSelectedDate && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Future attendance cannot be marked.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
 
     final classId = _selectedClassId;
     final currentUser = _authService.currentUser;
@@ -583,6 +596,305 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
         );
       }
     }
+  }
+
+  // --- MONTHLY CALENDAR GRID WIDGET ---
+
+  Widget _buildMonthlyCalendarCard({
+    required String currentClassId,
+    required DateTime selectedDate,
+    required ValueChanged<DateTime> onDateSelected,
+  }) {
+    final monthName = _months[_focusedMonth.month - 1];
+    final int daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
+    final DateTime firstDayOfMonth = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
+    final int leadingEmptySlots = (firstDayOfMonth.weekday - 1) % 7; // Monday = 1 -> 0 slots
+    final int totalGridCells = leadingEmptySlots + daysInMonth;
+
+    final today = DateTime.now();
+
+    // Map of dateStr -> Attendance submitted?
+    final Set<String> submittedDates = {
+      for (var r in _classAttendanceRecords) r.date
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          // Header & Controls
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$monthName ${_focusedMonth.year}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMain,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Attendance & Holiday Calendar',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        _focusedMonth = DateTime.now();
+                      });
+                      onDateSelected(DateTime.now());
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppColors.lightEmerald,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.today_rounded, size: 14, color: AppColors.darkEmerald),
+                          SizedBox(width: 4),
+                          Text(
+                            'Today',
+                            style: TextStyle(
+                              color: AppColors.darkEmerald,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  InkWell(
+                    onTap: () => setState(() {
+                      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1);
+                    }),
+                    borderRadius: BorderRadius.circular(8),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4.0),
+                      child: Icon(Icons.chevron_left_rounded, color: AppColors.textMain, size: 22),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => setState(() {
+                      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 1);
+                    }),
+                    borderRadius: BorderRadius.circular(8),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4.0),
+                      child: Icon(Icons.chevron_right_rounded, color: AppColors.textMain, size: 22),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: AppColors.border),
+          const SizedBox(height: 12),
+
+          // Weekday Labels (Monday-first)
+          Row(
+            children: _weekdays.map((day) {
+              return Expanded(
+                child: Center(
+                  child: Text(
+                    day,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+
+          // 7-Column Grid
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              crossAxisSpacing: 6,
+              mainAxisSpacing: 6,
+              childAspectRatio: 1.0,
+            ),
+            itemCount: totalGridCells,
+            itemBuilder: (context, index) {
+              if (index < leadingEmptySlots) {
+                return const SizedBox.shrink();
+              }
+
+              final int dayNumber = index - leadingEmptySlots + 1;
+              final DateTime cellDate = DateTime(_focusedMonth.year, _focusedMonth.month, dayNumber);
+              final String dateKey = _formatDateKey(cellDate);
+
+              final bool isToday = cellDate.year == today.year &&
+                  cellDate.month == today.month &&
+                  cellDate.day == today.day;
+              final bool isSelected = cellDate.year == selectedDate.year &&
+                  cellDate.month == selectedDate.month &&
+                  cellDate.day == selectedDate.day;
+
+              final HolidayModel? holiday = _getHolidayForClassAndDate(currentClassId, dateKey);
+              final bool hasSubmitted = submittedDates.contains(dateKey);
+
+              Color bgColor = AppColors.background;
+              Color borderColor = AppColors.border;
+              Color textColor = AppColors.textMain;
+              String statusBadgeText = '';
+
+              if (holiday != null) {
+                bgColor = AppColors.border.withValues(alpha: 0.3);
+                borderColor = AppColors.textSecondary.withValues(alpha: 0.4);
+                textColor = AppColors.textMain;
+                statusBadgeText = 'H';
+              } else if (hasSubmitted) {
+                bgColor = AppColors.lightEmerald;
+                borderColor = AppColors.primaryEmerald;
+                textColor = AppColors.darkEmerald;
+                statusBadgeText = '✓';
+              } else if (cellDate.isAfter(today)) {
+                textColor = AppColors.textSecondary.withValues(alpha: 0.5);
+              }
+
+              return InkWell(
+                onTap: () => onDateSelected(cellDate),
+                borderRadius: BorderRadius.circular(10),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  decoration: BoxDecoration(
+                    color: bgColor,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.primaryEmerald
+                          : (isToday ? AppColors.darkEmerald : borderColor),
+                      width: isSelected ? 2.0 : (isToday ? 1.5 : 1.0),
+                    ),
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '$dayNumber',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isToday || isSelected ? FontWeight.w700 : FontWeight.w600,
+                              color: textColor,
+                            ),
+                          ),
+                          if (statusBadgeText.isNotEmpty) ...[
+                            const SizedBox(height: 1),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: holiday != null ? AppColors.textSecondary : AppColors.primaryEmerald,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                statusBadgeText,
+                                style: const TextStyle(
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (isToday)
+                        Positioned(
+                          top: 3,
+                          right: 3,
+                          child: Container(
+                            width: 5,
+                            height: 5,
+                            decoration: const BoxDecoration(
+                              color: AppColors.primaryEmerald,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          // Legend
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildCalendarLegendItem('✓', 'Submitted', AppColors.primaryEmerald, AppColors.lightEmerald),
+              _buildCalendarLegendItem('H', 'Holiday', AppColors.textSecondary, AppColors.border.withValues(alpha: 0.3)),
+              _buildCalendarLegendItem('-', 'Not Submitted', AppColors.textSecondary, AppColors.background),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarLegendItem(String code, String label, Color color, Color bg) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: color, width: 1.0),
+          ),
+          child: Text(
+            code,
+            style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: color),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: AppColors.textSecondary),
+        ),
+      ],
+    );
   }
 
   @override
@@ -697,7 +1009,48 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                           // MARK ATTENDANCE TAB
                           _buildControlsCard(classNames),
                           const SizedBox(height: 16),
-                          if (markTabHoliday != null) ...[
+
+                          // Monthly Calendar Grid Card
+                          _buildMonthlyCalendarCard(
+                            currentClassId: _selectedClassId,
+                            selectedDate: _selectedDate,
+                            onDateSelected: (cellDate) async {
+                              setState(() {
+                                _selectedDate = cellDate;
+                              });
+                              await _loadStudentsAndAttendanceForSelectedClass();
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          if (_isFutureSelectedDate) ...[
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Row(
+                                children: const [
+                                  Icon(Icons.event_rounded, color: AppColors.textSecondary, size: 20),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Future attendance cannot be marked.',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ] else if (markTabHoliday != null) ...[
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(14),
@@ -806,7 +1159,26 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              if (markTabHoliday != null)
+                              if (_isFutureSelectedDate)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.background,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: AppColors.border),
+                                  ),
+                                  child: const Text(
+                                    'Future Attendance Unavailable',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                )
+                              else if (markTabHoliday != null)
                                 Container(
                                   width: double.infinity,
                                   padding: const EdgeInsets.all(14),
@@ -928,7 +1300,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Date',
+                    'Selected Date',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
@@ -943,10 +1315,10 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                       const SizedBox(width: 6),
                       Text(
                         '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.textMain,
+                          color: _isFutureSelectedDate ? AppColors.textSecondary : AppColors.textMain,
                         ),
                       ),
                     ],
@@ -1006,6 +1378,8 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   }
 
   Widget _buildStudentsHeaderRow(bool isHoliday) {
+    final bool isDisabled = isHoliday || _isAttendanceSubmitted || _isFutureSelectedDate;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1017,7 +1391,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
             color: AppColors.textMain,
           ),
         ),
-        if (!_isAttendanceSubmitted && !isHoliday)
+        if (!isDisabled)
           ElevatedButton.icon(
             onPressed: _markAllPresent,
             icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
@@ -1036,15 +1410,21 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: isHoliday ? AppColors.border.withValues(alpha: 0.3) : AppColors.lightEmerald,
+              color: isHoliday
+                  ? AppColors.border.withValues(alpha: 0.3)
+                  : (_isFutureSelectedDate ? AppColors.background : AppColors.lightEmerald),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
-              isHoliday ? 'Holiday' : 'Locked',
+              _isFutureSelectedDate
+                  ? 'Future Date'
+                  : (isHoliday ? 'Holiday' : 'Locked'),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: isHoliday ? AppColors.textMain : AppColors.darkEmerald,
+                color: isHoliday || _isFutureSelectedDate
+                    ? AppColors.textMain
+                    : AppColors.darkEmerald,
               ),
             ),
           ),
@@ -1163,7 +1543,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                 'Present',
                 AppColors.success,
                 isPresent,
-                isDisabled: isHoliday || _isAttendanceSubmitted,
+                isDisabled: isHoliday || _isAttendanceSubmitted || _isFutureSelectedDate,
               ),
               const SizedBox(width: 8),
               _buildAttendanceToggleButton(
@@ -1171,7 +1551,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                 'Absent',
                 AppColors.error,
                 !isPresent,
-                isDisabled: isHoliday || _isAttendanceSubmitted,
+                isDisabled: isHoliday || _isAttendanceSubmitted || _isFutureSelectedDate,
               ),
             ],
           ),
@@ -1199,10 +1579,10 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? activeColor : AppColors.background,
+          color: isSelected ? (isDisabled ? AppColors.textSecondary.withValues(alpha: 0.4) : activeColor) : AppColors.background,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isSelected ? activeColor : AppColors.border,
+            color: isSelected ? (isDisabled ? AppColors.border : activeColor) : AppColors.border,
             width: isSelected ? 1.5 : 1.0,
           ),
         ),
@@ -1230,8 +1610,21 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Class & Calendar Selectors
+        // 1. Class Selector & Calendar Grid
         _buildHistorySelectors(classNames),
+        const SizedBox(height: 16),
+
+        // Monthly Calendar Grid
+        _buildMonthlyCalendarCard(
+          currentClassId: _historyClassId,
+          selectedDate: _historyDate,
+          onDateSelected: (cellDate) async {
+            setState(() {
+              _historyDate = cellDate;
+            });
+            await _loadHistoryForClass();
+          },
+        ),
         const SizedBox(height: 16),
 
         if (historyHoliday != null) ...[
@@ -1471,7 +1864,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                             setState(() {
                               _historyClassName = v;
                             });
-                            await _loadHistoryForClass();
+                            await _loadStudentsAndAttendanceForSelectedClass();
                           }
                         },
                       ),
@@ -1489,7 +1882,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Select Date',
+                        'Selected Date',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
@@ -1517,23 +1910,6 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () {
-                setState(() {
-                  _historyDate = DateTime.now();
-                });
-                _loadHistoryForClass();
-              },
-              icon: const Icon(Icons.today_rounded, size: 16, color: AppColors.primaryEmerald),
-              label: const Text('Today', style: TextStyle(color: AppColors.primaryEmerald, fontWeight: FontWeight.w600, fontSize: 12)),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              ),
-            ),
           ),
         ],
       ),
