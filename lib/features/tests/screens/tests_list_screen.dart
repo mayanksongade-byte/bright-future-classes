@@ -307,12 +307,20 @@ class _TestsListScreenState extends State<TestsListScreen> {
   }
 
   Widget _buildTestCard(TestItem item) {
+    final bool isCancelled = item.test.isCancelled;
     Color statusColor = AppColors.warning;
-    if (item.status == 'Completed') {
+    String statusTitle = item.status;
+
+    if (isCancelled) {
+      statusColor = AppColors.error;
+      statusTitle = 'Cancelled';
+    } else if (item.status == 'Completed') {
       statusColor = AppColors.success;
     } else if (item.status == 'Partially Entered') {
       statusColor = AppColors.info;
     }
+
+    final timingTag = item.dateTimingTag;
 
     return InkWell(
       onTap: () async {
@@ -350,12 +358,14 @@ class _TestsListScreenState extends State<TestsListScreen> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: AppColors.lightEmerald,
+                          color: isCancelled
+                              ? AppColors.error.withValues(alpha: 0.1)
+                              : AppColors.lightEmerald,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(
-                          Icons.quiz_outlined,
-                          color: AppColors.primaryEmerald,
+                        child: Icon(
+                          isCancelled ? Icons.cancel_outlined : Icons.quiz_outlined,
+                          color: isCancelled ? AppColors.error : AppColors.primaryEmerald,
                           size: 20,
                         ),
                       ),
@@ -398,7 +408,7 @@ class _TestsListScreenState extends State<TestsListScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    item.status,
+                    statusTitle,
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -408,25 +418,96 @@ class _TestsListScreenState extends State<TestsListScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+
+            // Creator Attribution Row
+            Row(
+              children: [
+                const Icon(Icons.person_outline_rounded, size: 14, color: AppColors.textSecondary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    item.creatorAttribution,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             const Divider(height: 1, color: AppColors.border),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
+
+            // Timing & Evaluated Row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Date: ${item.test.testDate} • Total: ${item.test.totalMarks.toStringAsFixed(0).replaceAll(RegExp(r'\.0$'), '')}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
+                Expanded(
+                  child: Row(
+                    children: [
+                      Text(
+                        'Date: ${item.test.testDate}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      if (timingTag.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: timingTag == 'Today'
+                                ? AppColors.primaryEmerald
+                                : AppColors.lightEmerald,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            timingTag,
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: timingTag == 'Today' ? Colors.white : AppColors.darkEmerald,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
-                  'Marks: ${item.marksEnteredCount}/${item.totalStudents} entered',
+                  '${item.marksEnteredCount}/${item.totalStudents} Evaluated',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textMain,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+
+            // Marks Editor Attribution Row
+            Row(
+              children: [
+                const Icon(Icons.history_edu_rounded, size: 14, color: AppColors.primaryEmerald),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '${item.editorAttribution} • Max: ${item.test.totalMarks.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],

@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/validators.dart';
+import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/teacher_model.dart';
 import '../../../data/repositories/class_repository.dart';
+import '../../../data/services/firestore_service.dart';
 import '../../classes/screens/add_class_screen.dart';
 import '../view_models/teachers_view_model.dart';
 
@@ -29,11 +31,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   final _passwordController = TextEditingController();
 
   Set<String> _selectedClassIds = {};
+  Set<String> _selectedSubjects = {'Mathematics'};
   String _selectedStatus = 'active';
-  String _selectedSubject = 'Mathematics';
   bool _isPasswordObscured = true;
 
-  final List<String> _subjectOptions = [
+  List<String> _availableSubjects = [
     'Mathematics',
     'Science',
     'English',
@@ -41,8 +43,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'Social Science',
     'Gujarati',
     'Hindi',
-    'Other',
   ];
+  bool _isLoadingSubjects = true;
 
   late final TeachersViewModel _viewModel;
   late final ClassRepository _classRepository;
@@ -63,35 +65,43 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       _emailController.text = t.email;
       _phoneController.text = t.phone;
       _addressController.text = t.address;
-      if (_subjectOptions.contains(t.subject)) {
-        _selectedSubject = t.subject;
+      if (t.subjects.isNotEmpty) {
+        _selectedSubjects = t.subjects.toSet();
       } else if (t.subject.isNotEmpty) {
-        _selectedSubject = t.subject;
+        _selectedSubjects = {t.subject};
       }
       _userIdController.text = t.userId ?? '';
       _selectedStatus = t.status;
       _selectedClassIds = t.classIds.toSet();
     }
 
-    _loadClasses();
+    _loadData();
   }
 
-  Future<void> _loadClasses() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoadingClasses = true;
+      _isLoadingSubjects = true;
     });
+
     try {
       final classes = await _classRepository.getClasses();
-      if (mounted) {
-        setState(() {
-          _availableClasses = classes;
-          _isLoadingClasses = false;
-        });
-      }
+      final centralSubs = await FirestoreService().getCentralSubjects();
+      if (!mounted) return;
+      setState(() {
+        _availableClasses = classes;
+        _availableSubjects = centralSubs;
+        _isLoadingClasses = false;
+        _isLoadingSubjects = false;
+        if (_selectedSubjects.isEmpty && centralSubs.isNotEmpty) {
+          _selectedSubjects = {centralSubs.first};
+        }
+      });
     } catch (_) {
       if (mounted) {
         setState(() {
           _isLoadingClasses = false;
+          _isLoadingSubjects = false;
         });
       }
     }
@@ -116,6 +126,61 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     super.dispose();
   }
 
+  void _showAddSubjectDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Add New Subject', style: TextStyle(fontWeight: FontWeight.w700)),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(labelText: 'Subject Name', hintText: 'e.g. Marathi'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = controller.text.trim();
+                if (name.isEmpty) return;
+
+                final exists = _availableSubjects.any((s) => s.trim().toLowerCase() == name.toLowerCase());
+                if (exists) {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Subject already exists.'), backgroundColor: AppColors.error),
+                  );
+                  return;
+                }
+
+                await FirestoreService().addCentralSubject(name);
+                if (!context.mounted) return;
+                Navigator.of(context).pop();
+                final updated = await FirestoreService().getCentralSubjects();
+                if (!mounted) return;
+                setState(() {
+                  _availableSubjects = updated;
+                  _selectedSubjects.add(name);
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryEmerald,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _handleSave() async {
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
@@ -124,6 +189,21 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Please select at least one assigned class'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+      return;
+    }
+
+    if (_selectedSubjects.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please select at least one assigned subject'),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -145,7 +225,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
         address: _addressController.text.trim(),
-        subject: _selectedSubject,
+        subjects: _selectedSubjects.toList(),
         classIds: _selectedClassIds.toList(),
         status: _selectedStatus,
         createdAt: widget.teacherToEdit!.createdAt,
@@ -156,7 +236,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
         address: _addressController.text.trim(),
-        subject: _selectedSubject,
+        subjects: _selectedSubjects.toList(),
         classIds: _selectedClassIds.toList(),
         loginUserId: _userIdController.text.trim().toUpperCase(),
         password: _passwordController.text.trim(),
@@ -178,7 +258,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                 child: Text(
                   isEditing
                       ? 'Teacher profile updated successfully'
-                      : 'Teacher added successfully',
+                      : 'Teacher profile created successfully',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w500,
@@ -309,9 +389,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                     // Email
                     AppTextField(
                       label: 'Email Address',
-                      hintText: 'e.g. amit@example.com',
+                      hintText: 'e.g. amit@brightfuture.com',
                       controller: _emailController,
-                      validator: (value) => Validators.validateEmail(value),
+                      validator: Validators.validateEmail,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       prefixIcon: const Icon(
@@ -322,13 +402,12 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Phone (10 digits only)
+                    // Phone Number
                     AppTextField(
                       label: 'Phone Number',
-                      hintText: '9876543210',
+                      hintText: 'e.g. 9876543210',
                       controller: _phoneController,
-                      validator: (value) =>
-                          Validators.validate10DigitPhone(value, 'Phone Number'),
+                      validator: Validators.validatePhone,
                       keyboardType: TextInputType.phone,
                       textInputAction: TextInputAction.next,
                       prefixIcon: const Icon(
@@ -339,83 +418,255 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Address (Multiline)
+                    // Address
                     AppTextField(
-                      label: 'Address',
-                      hintText: 'Enter complete residential address...',
+                      label: 'Address (Optional)',
+                      hintText: 'e.g. 123 Main Street',
                       controller: _addressController,
-                      maxLines: 3,
-                      validator: (value) =>
-                          Validators.validateRequired(value, 'Address'),
                       textInputAction: TextInputAction.next,
+                      textCapitalization: TextCapitalization.sentences,
                       prefixIcon: const Icon(
                         Icons.location_on_outlined,
                         color: AppColors.textSecondary,
                         size: 20,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
 
-                    // Subject Dropdown
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    // SECTION 2 — ASSIGNED SUBJECTS (Multi-select)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
-                          'Subject',
-                          style: AppTextStyles.inputLabel,
+                          'Assigned Subjects *',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textMain,
+                          ),
                         ),
-                        const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          initialValue: _selectedSubject,
-                          style: AppTextStyles.inputText,
-                          icon: const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            color: AppColors.textSecondary,
-                          ),
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: AppColors.surface,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            prefixIcon: const Icon(
-                              Icons.book_outlined,
-                              color: AppColors.textSecondary,
-                              size: 20,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: AppColors.border,
-                                width: 1,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: AppColors.primaryEmerald,
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                          items: _subjectOptions.map((subj) {
-                            return DropdownMenuItem(
-                              value: subj,
-                              child: Text(subj),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedSubject = value;
-                              });
-                            }
-                          },
+                        TextButton.icon(
+                          onPressed: _showAddSubjectDialog,
+                          icon: const Icon(Icons.add_rounded, size: 16, color: AppColors.primaryEmerald),
+                          label: const Text('Add Subject', style: TextStyle(color: AppColors.primaryEmerald, fontWeight: FontWeight.w600, fontSize: 12)),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Select one or more subjects taught by this teacher.',
+                      style: AppTextStyles.subtitle,
+                    ),
+                    const SizedBox(height: 12),
+
+                    _isLoadingSubjects
+                        ? Center(child: Padding(padding: const EdgeInsets.all(16), child: AppLoadingIndicator()))
+                        : Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: _availableSubjects.isEmpty
+                                ? const Text('No subjects available.', style: TextStyle(color: AppColors.textSecondary))
+                                : Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: _availableSubjects.map((sub) {
+                                      final isSelected = _selectedSubjects.contains(sub);
+                                      return FilterChip(
+                                        label: Text(sub),
+                                        selected: isSelected,
+                                        selectedColor: AppColors.lightEmerald,
+                                        checkmarkColor: AppColors.darkEmerald,
+                                        labelStyle: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: isSelected ? AppColors.darkEmerald : AppColors.textMain,
+                                        ),
+                                        onSelected: (selected) {
+                                          setState(() {
+                                            if (selected) {
+                                              _selectedSubjects.add(sub);
+                                            } else {
+                                              if (_selectedSubjects.length > 1) {
+                                                _selectedSubjects.remove(sub);
+                                              } else {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text('At least one subject must remain selected.'),
+                                                    backgroundColor: AppColors.error,
+                                                    behavior: SnackBarBehavior.floating,
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                          });
+                                        },
+                                      );
+                                    }).toList(),
+                                  ),
+                          ),
+                    const SizedBox(height: 20),
+
+                    // SECTION 3 — ASSIGNED CLASSES
+                    const Text(
+                      'Assigned Classes *',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMain,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Select classes this teacher is assigned to.',
+                      style: AppTextStyles.subtitle,
+                    ),
+                    const SizedBox(height: 12),
+
+                    _isLoadingClasses
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: AppLoadingIndicator(),
+                            ),
+                          )
+                        : _availableClasses.isEmpty
+                            ? Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: AppColors.border),
+                                ),
+                                child: Column(
+                                  children: [
+                                    const Text(
+                                      'No classes available in the system.',
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextButton.icon(
+                                      onPressed: () async {
+                                        await Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                const AddClassScreen(),
+                                          ),
+                                        );
+                                        _loadData();
+                                      },
+                                      icon: const Icon(Icons.add_rounded,
+                                          size: 16,
+                                          color: AppColors.primaryEmerald),
+                                      label: const Text(
+                                        'Create Class First',
+                                        style: TextStyle(
+                                            color: AppColors.primaryEmerald,
+                                            fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: AppColors.border),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    CheckboxListTile(
+                                      title: const Text(
+                                        'Select All Classes',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.textMain,
+                                        ),
+                                      ),
+                                      value: _selectedClassIds.length ==
+                                          _availableClasses.length,
+                                      activeColor: AppColors.primaryEmerald,
+                                      contentPadding: EdgeInsets.zero,
+                                      onChanged: (bool? value) {
+                                        setState(() {
+                                          if (value == true) {
+                                            _selectedClassIds = _availableClasses
+                                                .map((c) => c.classId)
+                                                .toSet();
+                                          } else {
+                                            _selectedClassIds.clear();
+                                          }
+                                        });
+                                      },
+                                    ),
+                                    const Divider(height: 1, color: AppColors.border),
+                                    const SizedBox(height: 8),
+                                    ..._availableClasses.map((cls) {
+                                      final isSelected =
+                                          _selectedClassIds.contains(cls.classId);
+                                      return CheckboxListTile(
+                                        title: Text(
+                                          cls.className,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.textMain,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          'Standard: ${cls.standard} · Medium: ${cls.medium}',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                        value: isSelected,
+                                        activeColor: AppColors.primaryEmerald,
+                                        contentPadding: EdgeInsets.zero,
+                                        onChanged: (bool? value) {
+                                          setState(() {
+                                            if (value == true) {
+                                              _selectedClassIds.add(cls.classId);
+                                            } else {
+                                              _selectedClassIds.remove(cls.classId);
+                                            }
+                                          });
+                                        },
+                                      );
+                                    }),
+                                  ],
+                                ),
+                              ),
+
+                    // SECTION 4 — STATUS & CREDENTIALS
+                    const SizedBox(height: 28),
+                    const Text(
+                      'Status & Credentials',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMain,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Configure teacher status and login account.',
+                      style: AppTextStyles.subtitle,
+                    ),
+                    const SizedBox(height: 20),
 
                     // Status Dropdown
                     Column(
@@ -481,49 +732,16 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                       ],
                     ),
 
-                    // SECTION 2 — LOGIN CREDENTIALS
-                    const SizedBox(height: 28),
-                    const Text(
-                      'Login Credentials',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textMain,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      isEditing
-                          ? 'Teacher login account identifier.'
-                          : 'Set a unique Login User ID and password for the teacher.',
-                      style: AppTextStyles.subtitle,
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Login User ID
-                    if (isEditing)
-                      AppTextField(
-                        label: 'Login User ID',
-                        hintText: 'N/A',
-                        controller: TextEditingController(
-                          text: widget.teacherToEdit?.userId ?? 'N/A',
-                        ),
-                        readOnly: true,
-                        enabled: false,
-                        prefixIcon: const Icon(
-                          Icons.badge_outlined,
-                          color: AppColors.textSecondary,
-                          size: 20,
-                        ),
-                      )
-                    else ...[
+                    if (!isEditing) ...[
+                      const SizedBox(height: 16),
                       AppTextField(
                         label: 'Login User ID',
                         hintText: 'e.g. TCH001',
                         controller: _userIdController,
-                        validator: Validators.validateLoginUserId,
-                        textCapitalization: TextCapitalization.characters,
+                        validator: (value) =>
+                            Validators.validateRequired(value, 'User ID'),
                         textInputAction: TextInputAction.next,
+                        textCapitalization: TextCapitalization.characters,
                         prefixIcon: const Icon(
                           Icons.badge_outlined,
                           color: AppColors.textSecondary,
@@ -531,15 +749,13 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-
-                      // Login Password
                       AppTextField(
-                        label: 'Login Password',
-                        hintText: 'Minimum 6 characters',
+                        label: 'Password',
+                        hintText: 'At least 6 characters',
                         controller: _passwordController,
+                        validator: Validators.validatePassword,
                         obscureText: _isPasswordObscured,
-                        validator: Validators.validateTeacherPassword,
-                        textInputAction: TextInputAction.next,
+                        textInputAction: TextInputAction.done,
                         prefixIcon: const Icon(
                           Icons.lock_outline_rounded,
                           color: AppColors.textSecondary,
@@ -561,148 +777,10 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 28),
 
-                    // SECTION 3 — TEACHING INFORMATION
-                    const Text(
-                      'Teaching Information',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textMain,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Select assigned classes for this teacher.',
-                      style: AppTextStyles.subtitle,
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Assigned Classes (Multi-select)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Assigned Classes',
-                          style: AppTextStyles.inputLabel,
-                        ),
-                        const SizedBox(height: 6),
-                        _isLoadingClasses
-                            ? const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(16.0),
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.primaryEmerald,
-                                  ),
-                                ),
-                              )
-                            : _availableClasses.isEmpty
-                                ? Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          AppColors.border.withValues(alpha: 0.25),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: AppColors.border,
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        const Text(
-                                          'Create a class first before adding a teacher.',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w500,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                        const SizedBox(height: 12),
-                                        PrimaryButton(
-                                          text: 'Create Class',
-                                          onPressed: () async {
-                                            await Navigator.of(context).push(
-                                              MaterialPageRoute(
-                                                builder: (context) =>
-                                                    const AddClassScreen(),
-                                              ),
-                                            );
-                                            _loadClasses();
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                : Container(
-                                    decoration: BoxDecoration(
-                                      color: AppColors.surface,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: AppColors.border,
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: ListView.separated(
-                                      shrinkWrap: true,
-                                      physics:
-                                          const NeverScrollableScrollPhysics(),
-                                      itemCount: _availableClasses.length,
-                                      separatorBuilder: (context, index) =>
-                                          const Divider(
-                                            height: 1,
-                                            color: AppColors.border,
-                                          ),
-                                      itemBuilder: (context, index) {
-                                        final cls = _availableClasses[index];
-                                        final isSelected =
-                                            _selectedClassIds.contains(cls.classId);
-                                        return CheckboxListTile(
-                                          title: Text(
-                                            cls.className,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.textMain,
-                                            ),
-                                          ),
-                                          subtitle: Text(
-                                            'Standard: ${cls.standard} • Medium: ${cls.medium} • ${cls.academicYear}',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.textSecondary,
-                                            ),
-                                          ),
-                                          value: isSelected,
-                                          activeColor: AppColors.primaryEmerald,
-                                          checkboxShape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(4),
-                                          ),
-                                          onChanged: (bool? value) {
-                                            setState(() {
-                                              if (value == true) {
-                                                _selectedClassIds.add(cls.classId);
-                                              } else {
-                                                _selectedClassIds
-                                                    .remove(cls.classId);
-                                              }
-                                            });
-                                          },
-                                        );
-                                      },
-                                    ),
-                                  ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-
-                    // Submit Button
+                    const SizedBox(height: 32),
                     PrimaryButton(
-                      text: isEditing ? 'Update Teacher' : 'Save Teacher',
+                      text: isEditing ? 'Update Teacher Profile' : 'Create Teacher Profile',
                       isLoading: _viewModel.isActionLoading,
                       onPressed: _viewModel.isActionLoading ? null : _handleSave,
                     ),

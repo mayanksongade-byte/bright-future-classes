@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../data/repositories/test_repository.dart';
 import '../view_models/tests_view_model.dart';
 import 'add_edit_test_screen.dart';
 import 'enter_marks_screen.dart';
@@ -120,10 +121,87 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
     }
   }
 
+  void _showAuditHistoryModal() async {
+    final audits = await TestRepository().getMarkAuditsForTest(_item.test.testId);
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Marks Edit History',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textMain),
+              ),
+              const SizedBox(height: 16),
+              audits.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('No edit history recorded for this test.', style: TextStyle(color: AppColors.textSecondary)),
+                    )
+                  : Expanded(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: audits.length,
+                        separatorBuilder: (context, index) => const Divider(height: 1, color: AppColors.border),
+                        itemBuilder: (context, index) {
+                          final audit = audits[index];
+                          final oldM = audit.oldIsAbsent ? 'Absent' : (audit.oldMarks?.toStringAsFixed(1) ?? 'N/A');
+                          final newM = audit.newIsAbsent ? 'Absent' : (audit.newMarks?.toStringAsFixed(1) ?? 'N/A');
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Student ID: ${audit.studentId}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                                const SizedBox(height: 2),
+                                Text('$oldM → $newM', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primaryEmerald)),
+                                const SizedBox(height: 2),
+                                Text('Edited by: ${audit.editedByName} (${audit.editedByRole})', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                                if (audit.newRemarks != null && audit.newRemarks!.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text('Remark: "${audit.newRemarks}"', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.textMain)),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     Color statusColor = AppColors.warning;
-    if (_item.status == 'Completed') {
+    if (_item.test.isCancelled) {
+      statusColor = AppColors.error;
+    } else if (_item.status == 'Completed') {
       statusColor = AppColors.success;
     } else if (_item.status == 'Partially Entered') {
       statusColor = AppColors.info;
@@ -288,7 +366,7 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
                           child: _buildInfoBox(
                             label: 'Total / Passing',
                             value:
-                                '${_item.test.totalMarks.toStringAsFixed(0).replaceAll(RegExp(r'\.0$'), '')}${_item.test.passingMarks != null ? ' (Pass: ${_item.test.passingMarks!.toStringAsFixed(0).replaceAll(RegExp(r'\.0$'), '')})' : ''}',
+                                '${_item.test.totalMarks.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}${_item.test.passingMarks != null ? ' (Pass: ${_item.test.passingMarks!.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')})' : ''}',
                             icon: Icons.military_tech_outlined,
                             valueColor: AppColors.warning,
                           ),
@@ -309,28 +387,54 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _showAuditHistoryModal,
+                      icon: const Icon(Icons.history_rounded, size: 16),
+                      label: const Text('View Change History'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textMain,
+                        side: const BorderSide(color: AppColors.border),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 28),
                     Row(
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () async {
-                              await Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      EnterMarksScreen(testItem: _item),
-                                ),
-                              );
-                              await _refresh();
-                            },
-                            icon: const Icon(Icons.edit_note_rounded,
-                                size: 16, color: AppColors.primaryEmerald),
-                            label: const Text('Enter Marks',
-                                style: TextStyle(
-                                    color: AppColors.primaryEmerald)),
+                            onPressed: (_item.test.isCancelled || _item.isFutureExamDate)
+                                ? null
+                                : () async {
+                                    await Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            EnterMarksScreen(testItem: _item),
+                                      ),
+                                    );
+                                    await _refresh();
+                                  },
+                            icon: Icon(
+                                _item.isFutureExamDate ? Icons.lock_clock_outlined : Icons.edit_note_rounded,
+                                size: 16,
+                                color: _item.isFutureExamDate ? AppColors.textSecondary : AppColors.primaryEmerald),
+                            label: Text(
+                              _item.isFutureExamDate
+                                  ? 'Marks on ${_item.test.testDate}'
+                                  : 'Enter Marks',
+                              style: TextStyle(
+                                color: _item.isFutureExamDate
+                                    ? AppColors.textSecondary
+                                    : AppColors.primaryEmerald,
+                              ),
+                            ),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(
-                                  color: AppColors.primaryEmerald),
+                              side: BorderSide(
+                                  color: _item.isFutureExamDate
+                                      ? AppColors.border
+                                      : AppColors.primaryEmerald),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),

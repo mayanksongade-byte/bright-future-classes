@@ -46,7 +46,7 @@ class TeachersViewModel extends ChangeNotifier {
     required String email,
     required String phone,
     required String address,
-    required String subject,
+    required List<String> subjects,
     required List<String> classIds,
     required String loginUserId,
     required String password,
@@ -61,13 +61,15 @@ class TeachersViewModel extends ChangeNotifier {
 
     try {
       final teacherId = _teacherRepository.generateTeacherId();
+      final cleanSubjects = subjects.isNotEmpty ? subjects : ['Mathematics'];
       final teacher = TeacherModel(
         teacherId: teacherId,
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
         address: address.trim(),
-        subject: subject.trim(),
+        subject: cleanSubjects.first,
+        subjects: cleanSubjects,
         classIds: classIds.toSet().toList(),
         status: status,
       );
@@ -96,7 +98,7 @@ class TeachersViewModel extends ChangeNotifier {
     required String email,
     required String phone,
     required String address,
-    required String subject,
+    required List<String> subjects,
     required List<String> classIds,
     required String status,
     DateTime? createdAt,
@@ -117,17 +119,20 @@ class TeachersViewModel extends ChangeNotifier {
           name: name,
           email: email,
           phone: phone,
-          subject: subject,
+          subject: subjects.isNotEmpty ? subjects.first : 'Mathematics',
+          subjects: subjects,
           classIds: classIds,
         ),
       );
 
+      final cleanSubjects = subjects.isNotEmpty ? subjects : existing.subjects;
       final updatedTeacher = existing.copyWith(
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
         address: address.trim(),
-        subject: subject.trim(),
+        subject: cleanSubjects.first,
+        subjects: cleanSubjects,
         classIds: classIds.toSet().toList(),
         status: status,
         createdAt: createdAt ?? existing.createdAt,

@@ -450,11 +450,47 @@ class FirestoreService {
     await batch.commit();
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getMarkDocumentsForTest(String testId) async {
-    final snapshot = await _firestore
+  Future<void> saveMarksBatchWithAudit(List<dynamic> marksList, List<dynamic> auditsList) async {
+    final batch = _firestore.batch();
+    for (var m in marksList) {
+      final docRef = _firestore.collection('marks').doc(m.markId);
+      batch.set(docRef, m.toMap(), SetOptions(merge: true));
+    }
+    for (var a in auditsList) {
+      final docRef = _firestore.collection('marks_audit').doc(a.auditId);
+      batch.set(docRef, a.toMap(), SetOptions(merge: true));
+    }
+    await batch.commit();
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getMarkAuditDocumentsForTest(
+      String testId, {String? classId}) async {
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('marks_audit')
+        .where('testId', isEqualTo: testId);
+    if (classId != null && classId.isNotEmpty) {
+      query = query.where('classId', isEqualTo: classId);
+    }
+    final snapshot = await query.get();
+    return snapshot.docs;
+  }
+
+  Future<void> cancelTestDocument(String testId) async {
+    await _firestore.collection('tests').doc(testId).update({
+      'isCancelled': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getMarkDocumentsForTest(
+      String testId, {String? classId}) async {
+    Query<Map<String, dynamic>> query = _firestore
         .collection('marks')
-        .where('testId', isEqualTo: testId)
-        .get();
+        .where('testId', isEqualTo: testId);
+    if (classId != null && classId.isNotEmpty) {
+      query = query.where('classId', isEqualTo: classId);
+    }
+    final snapshot = await query.get();
     return snapshot.docs;
   }
 
@@ -617,6 +653,31 @@ class FirestoreService {
 
   Future<void> saveInstituteSettingsDocument(Map<String, dynamic> data) async {
     await _firestore.collection('settings').doc('app').set(data, SetOptions(merge: true));
+  }
+
+  Future<List<String>> getCentralSubjects() async {
+    final doc = await _firestore.collection('settings').doc('app').get();
+    if (doc.exists) {
+      final raw = doc.data()?['subjects'];
+      if (raw is List) {
+        final list = raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toSet().toList();
+        if (list.isNotEmpty) return list;
+      }
+    }
+    return ['Mathematics', 'Science', 'English', 'Gujarati', 'Social Science', 'Hindi'];
+  }
+
+  Future<void> addCentralSubject(String subjectName) async {
+    final clean = subjectName.trim();
+    if (clean.isEmpty) return;
+    final current = await getCentralSubjects();
+    if (!current.contains(clean)) {
+      current.add(clean);
+      await _firestore.collection('settings').doc('app').set({
+        'subjects': current,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
   }
 
   // Holiday Document Methods

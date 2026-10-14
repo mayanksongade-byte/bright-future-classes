@@ -185,25 +185,33 @@ service cloud.firestore {
       allow create: if request.auth != null && (
         isActiveAdmin()
         || (request.resource != null && request.resource.data.get('classId', '') != '' && isAssignedTeacher(request.resource.data.classId))
-        || (request.resource != null && isStudentOwner(request.resource.data.get('studentId', '')))
       );
       allow update: if request.auth != null && (
         isActiveAdmin()
+
         || (
           resource != null
           && resource.data.get('classId', '') != ''
-          && isAssignedTeacher(resource.data.classId)
-          && request.resource.data.get('classId', '') == resource.data.classId
-          && request.resource.data.get('studentId', '') == resource.data.studentId
-        )
-        || (
-          resource != null
-          && isStudentOwner(resource.data.get('studentId', ''))
+          && isAssignedTeacher(resource.data.
+            classId)
           && request.resource.data.get('classId', '') == resource.data.classId
           && request.resource.data.get('studentId', '') == resource.data.studentId
         )
       );
       allow delete: if isActiveAdmin();
+    }
+
+    // Marks Audit Collection
+    match /marks_audit/{auditId} {
+      allow read: if request.auth != null && (
+        isActiveAdmin()
+        || (resource != null && resource.data.get('classId', '') != '' && isAssignedTeacher(resource.data.classId))
+      );
+      allow create: if request.auth != null && (
+        isActiveAdmin()
+        || (request.resource != null && request.resource.data.get('classId', '') != '' && isAssignedTeacher(request.resource.data.classId))
+      );
+      allow update, delete: if isActiveAdmin();
     }
 
     // Notices Collection: Active Admin can manage notices

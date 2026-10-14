@@ -4,7 +4,10 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
+import '../../../data/models/teacher_model.dart';
 import '../../../data/models/test_model.dart';
+import '../../../data/repositories/class_repository.dart';
+import '../../../data/services/firestore_service.dart';
 import '../view_models/tests_view_model.dart';
 
 class AddEditTestScreen extends StatefulWidget {
@@ -32,6 +35,19 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
   String? _selectedClassId;
   late DateTime _testDate;
 
+  bool _isLoadingClasses = true;
+  bool _isAdmin = false;
+  List<ClassModel> _loadedClasses = [];
+  List<String> _availableSubjects = [
+    'Mathematics',
+    'Science',
+    'English',
+    'Computer',
+    'Social Science',
+    'Gujarati',
+    'Hindi',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -42,9 +58,9 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
     if (t != null) {
       _nameController.text = t.testName;
       _subjectController.text = t.subject;
-      _totalMarksController.text = t.totalMarks.toStringAsFixed(0).replaceAll(RegExp(r'\.0$'), '');
+      _totalMarksController.text = t.totalMarks.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '');
       _passingMarksController.text = t.passingMarks != null
-          ? t.passingMarks!.toStringAsFixed(0).replaceAll(RegExp(r'\.0$'), '')
+          ? t.passingMarks!.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')
           : '';
       _descriptionController.text = t.description;
       _selectedClassId = t.classId;
@@ -54,13 +70,103 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
       _totalMarksController.text = '50';
     }
 
-    _viewModel.fetchTestsData().then((_) {
-      if (mounted && _selectedClassId == null && _viewModel.classes.isNotEmpty) {
+    if (widget.preloadedClasses != null && widget.preloadedClasses!.isNotEmpty) {
+      _loadedClasses = widget.preloadedClasses!;
+      _isLoadingClasses = false;
+      if (_selectedClassId == null && _loadedClasses.isNotEmpty) {
+        _selectedClassId = _loadedClasses.first.classId;
+      }
+      _loadSubjectsOnly();
+    } else {
+      _loadDataForUser();
+    }
+  }
+
+  Future<void> _loadSubjectsOnly() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final userDoc = await FirestoreService().getUserDocument(user.uid);
+      final role = (userDoc?['role'] as String? ?? '').toLowerCase();
+      final isAdmin = role == 'admin';
+
+      List<String> subs = [];
+      if (isAdmin) {
+        subs = await FirestoreService().getCentralSubjects();
+      } else {
+        final teacherId = userDoc?['teacherId'] as String? ?? user.uid;
+        final teacherData = await FirestoreService().getTeacherDocument(teacherId);
+        final teacher = teacherData != null ? TeacherModel.fromMap(teacherData, teacherId) : null;
+        subs = teacher?.subjects ?? [teacher?.subject ?? 'Mathematics'];
+      }
+
+      if (mounted) {
         setState(() {
-          _selectedClassId = _viewModel.classes.first.classId;
+          _isAdmin = isAdmin;
+          _availableSubjects = subs;
+          if (_subjectController.text.isEmpty && subs.isNotEmpty) {
+            _subjectController.text = subs.first;
+          }
         });
       }
-    });
+    } catch (_) {}
+  }
+
+  Future<void> _loadDataForUser() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (mounted) setState(() => _isLoadingClasses = false);
+        return;
+      }
+
+      final userDoc = await FirestoreService().getUserDocument(user.uid);
+      final role = (userDoc?['role'] as String? ?? '').toLowerCase();
+      final isAdmin = role == 'admin';
+
+      List<ClassModel> classes = [];
+      List<String> subjects = [];
+
+      if (isAdmin) {
+        classes = await ClassRepository().getClasses();
+        subjects = await FirestoreService().getCentralSubjects();
+      } else {
+        final teacherId = userDoc?['teacherId'] as String? ?? user.uid;
+        final teacherData = await FirestoreService().getTeacherDocument(teacherId);
+        final teacher = teacherData != null ? TeacherModel.fromMap(teacherData, teacherId) : null;
+        final classIds = teacher?.classIds ?? [];
+
+        for (var cId in classIds) {
+          final cData = await FirestoreService().getClassDocument(cId);
+          if (cData != null) {
+            classes.add(ClassModel.fromMap(cData, cId));
+          }
+        }
+        subjects = teacher?.subjects ?? [teacher?.subject ?? 'Mathematics'];
+      }
+
+      if (mounted) {
+        setState(() {
+          _isAdmin = isAdmin;
+          _loadedClasses = classes;
+          _availableSubjects = subjects;
+          _isLoadingClasses = false;
+          if (_selectedClassId == null && classes.isNotEmpty) {
+            _selectedClassId = classes.first.classId;
+          }
+          if (_subjectController.text.isEmpty && subjects.isNotEmpty) {
+            _subjectController.text = subjects.first;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[AddEditTestScreen] Error loading data: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingClasses = false;
+        });
+      }
+    }
   }
 
   void _onViewModelChange() {
@@ -119,6 +225,11 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
       passingMarks = double.tryParse(passingStr);
     }
 
+    final userDoc = await FirestoreService().getUserDocument(user.uid);
+    final role = (userDoc?['role'] as String? ?? 'admin').toLowerCase();
+    final userRole = role == 'admin' ? 'admin' : (role == 'teacher' ? 'teacher' : 'admin');
+    final userName = userDoc?['name'] as String? ?? user.displayName ?? (userRole == 'admin' ? 'Admin' : 'Teacher');
+
     bool success = false;
     if (widget.testToEdit == null) {
       success = await _viewModel.createTest(
@@ -130,6 +241,8 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
         passingMarks: passingMarks,
         description: desc,
         createdBy: user.uid,
+        createdByName: userName,
+        createdByRole: userRole,
       );
     } else {
       success = await _viewModel.updateTest(
@@ -179,7 +292,33 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.testToEdit != null;
-    final classesList = widget.preloadedClasses ?? _viewModel.classes;
+
+    // Deduplicate class list by classId
+    final Map<String, ClassModel> uniqueClassMap = {};
+    final rawClasses = _loadedClasses.isNotEmpty
+        ? _loadedClasses
+        : (widget.preloadedClasses ?? _viewModel.classes);
+
+    for (var c in rawClasses) {
+      uniqueClassMap[c.classId] = c;
+    }
+
+    if (_selectedClassId != null &&
+        _selectedClassId!.isNotEmpty &&
+        !uniqueClassMap.containsKey(_selectedClassId)) {
+      uniqueClassMap[_selectedClassId!] = ClassModel(
+        classId: _selectedClassId!,
+        className: 'Class (${_selectedClassId!})',
+        standard: 'N/A',
+        medium: 'N/A',
+        academicYear: 'N/A',
+      );
+    }
+
+    final classesList = uniqueClassMap.values.toList();
+    final currentSubjectVal = _availableSubjects.contains(_subjectController.text)
+        ? _subjectController.text
+        : (_availableSubjects.isNotEmpty ? _availableSubjects.first : null);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -245,7 +384,7 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                   // Class Dropdown
                   const Text('Class', style: AppTextStyles.inputLabel),
                   const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
+                  DropdownButtonFormField<String?>(
                     initialValue: _selectedClassId,
                     isExpanded: true,
                     style: AppTextStyles.inputText,
@@ -264,22 +403,31 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                             color: AppColors.primaryEmerald, width: 1.5),
                       ),
                     ),
-                    items: classesList.isEmpty
+                    items: _isLoadingClasses
                         ? [
-                            const DropdownMenuItem(
+                            const DropdownMenuItem<String?>(
                               value: null,
                               child: Text('Loading classes...',
                                   style: TextStyle(
                                       color: AppColors.textSecondary)),
                             )
                           ]
-                        : classesList.map((cls) {
-                            return DropdownMenuItem<String>(
-                              value: cls.classId,
-                              child: Text(cls.className,
-                                  overflow: TextOverflow.ellipsis),
-                            );
-                          }).toList(),
+                        : (classesList.isEmpty
+                            ? [
+                                const DropdownMenuItem<String?>(
+                                  value: null,
+                                  child: Text('No classes assigned',
+                                      style: TextStyle(
+                                          color: AppColors.textSecondary)),
+                                )
+                              ]
+                            : classesList.map((cls) {
+                                return DropdownMenuItem<String?>(
+                                  value: cls.classId,
+                                  child: Text(cls.className,
+                                      overflow: TextOverflow.ellipsis),
+                                );
+                              }).toList()),
                     onChanged: (val) {
                       if (val != null) {
                         setState(() {
@@ -290,16 +438,14 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Subject
+                  // Subject Dropdown
                   const Text('Subject', style: AppTextStyles.inputLabel),
                   const SizedBox(height: 6),
-                  TextField(
-                    controller: _subjectController,
+                  DropdownButtonFormField<String>(
+                    value: currentSubjectVal,
+                    isExpanded: true,
                     style: AppTextStyles.inputText,
                     decoration: InputDecoration(
-                      hintText: 'e.g., Mathematics',
-                      hintStyle: const TextStyle(
-                          color: AppColors.textSecondary, fontSize: 14),
                       filled: true,
                       fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(
@@ -314,6 +460,19 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                             color: AppColors.primaryEmerald, width: 1.5),
                       ),
                     ),
+                    items: _availableSubjects.map((s) {
+                      return DropdownMenuItem<String>(
+                        value: s,
+                        child: Text(s, overflow: TextOverflow.ellipsis),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _subjectController.text = val;
+                        });
+                      }
+                    },
                   ),
                   const SizedBox(height: 16),
 
@@ -366,7 +525,7 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                             const SizedBox(height: 6),
                             TextField(
                               controller: _totalMarksController,
-                              keyboardType: TextInputType.number,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               style: AppTextStyles.inputText,
                               decoration: InputDecoration(
                                 hintText: 'e.g., 50',
@@ -403,7 +562,7 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                             const SizedBox(height: 6),
                             TextField(
                               controller: _passingMarksController,
-                              keyboardType: TextInputType.number,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               style: AppTextStyles.inputText,
                               decoration: InputDecoration(
                                 hintText: 'e.g., 18',

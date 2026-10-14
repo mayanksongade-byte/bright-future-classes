@@ -1,29 +1,62 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../data/models/mark_audit_model.dart';
+import '../../../data/repositories/test_repository.dart';
 import '../view_models/tests_view_model.dart';
 
-class TestResultsScreen extends StatelessWidget { 
+class TestResultsScreen extends StatefulWidget {
   final TestItem testItem;
 
   const TestResultsScreen({super.key, required this.testItem});
 
   @override
-  Widget build(BuildContext context) {
-    final test = testItem.test;
-    final markMap = {for (var m in testItem.marks) m.studentId: m};
+  State<TestResultsScreen> createState() => _TestResultsScreenState();
+}
 
-    final rows = testItem.studentsInClass.map((student) {
+class _TestResultsScreenState extends State<TestResultsScreen> {
+  final TestRepository _testRepository = TestRepository();
+  Map<String, MarkAuditModel> _latestAuditsMap = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAudits();
+  }
+
+  Future<void> _loadAudits() async {
+    try {
+      final audits = await _testRepository.getMarkAuditsForTest(widget.testItem.test.testId);
+      final Map<String, MarkAuditModel> map = {};
+      for (var a in audits) {
+        map[a.studentId] = a;
+      }
+      if (mounted) {
+        setState(() {
+          _latestAuditsMap = map;
+        });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final test = widget.testItem.test;
+    final markMap = {for (var m in widget.testItem.marks) m.studentId: m};
+
+    final rows = widget.testItem.studentsInClass.map((student) {
       final mark = markMap[student.studentId];
+      final latestAudit = _latestAuditsMap[student.studentId];
       return TestResultRow(
         student: student,
         mark: mark,
+        latestAudit: latestAudit,
         totalMarks: test.totalMarks,
         passingMarks: test.passingMarks,
       );
-    }).toList();  
+    }).toList();
 
     // Summary calculations
-    final totalStudents = testItem.totalStudents;
+    final totalStudents = widget.testItem.totalStudents;
     final enteredRows = rows
         .where((r) => r.mark != null && (r.marksValue != null || r.isAbsent))
         .toList();
@@ -128,7 +161,7 @@ class TestResultsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Class: ${testItem.classModel != null ? testItem.classModel!.className : 'N/A'} • Date: ${test.testDate} • Total Marks: ${test.totalMarks.toStringAsFixed(0).replaceAll(RegExp(r'\.0$'), '')}${test.passingMarks != null ? ' • Passing: ${test.passingMarks!.toStringAsFixed(0).replaceAll(RegExp(r'\.0$'), '')}' : ''}',
+                          'Class: ${widget.testItem.classModel != null ? widget.testItem.classModel!.className : 'N/A'} • Date: ${test.testDate} • Total Marks: ${test.totalMarks.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}${test.passingMarks != null ? ' • Passing: ${test.passingMarks!.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}' : ''}',
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppColors.textSecondary,
@@ -208,7 +241,7 @@ class TestResultsScreen extends StatelessWidget {
                               child: _buildSummaryMetric(
                                   'Average Marks',
                                   presentRows.isNotEmpty
-                                      ? '${avgMarks.toStringAsFixed(1)} / ${test.totalMarks.toStringAsFixed(0).replaceAll(RegExp(r'\.0$'), '')}'
+                                      ? '${avgMarks.toStringAsFixed(1)} / ${test.totalMarks.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}'
                                       : '--',
                                   AppColors.primaryEmerald),
                             ),
@@ -316,65 +349,91 @@ class TestResultsScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  row.student.name,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textMain,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'ID: ${row.student.studentId} • Marks: ${row.marksDisplay}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              if (!row.isAbsent && row.marksValue != null) ...[
-                Text(
-                  row.percentageDisplay,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textMain,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      row.student.name,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMain,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'ID: ${row.student.studentId} • Marks: ${row.marksDisplay}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  if (!row.isAbsent && row.marksValue != null) ...[
+                    Text(
+                      row.percentageDisplay,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textMain,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: resultColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      row.result,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: resultColor,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-              ],
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: resultColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  row.result,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: resultColor,
-                  ),
-                ),
+                ],
               ),
             ],
           ),
+          if (row.remarks != null && row.remarks!.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Remark: "${row.remarks!.trim()}"',
+              style: const TextStyle(
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+                color: AppColors.textMain,
+              ),
+            ),
+          ],
+          if (row.latestAudit != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Last updated by: ${row.latestAudit!.editedByName} (${row.latestAudit!.editedByRole.toUpperCase()})',
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
         ],
       ),
     );

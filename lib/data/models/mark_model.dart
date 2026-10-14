@@ -7,6 +7,7 @@ class MarkModel {
   final String classId;
   final double? marks; // null if absent or not entered
   final bool isAbsent;
+  final String? remarks;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -17,6 +18,7 @@ class MarkModel {
     required this.classId,
     this.marks,
     this.isAbsent = false,
+    this.remarks,
     this.createdAt,
     this.updatedAt,
   });
@@ -49,6 +51,7 @@ class MarkModel {
       classId: map['classId'] as String? ?? '',
       marks: (map['marks'] as num?)?.toDouble(),
       isAbsent: map['isAbsent'] as bool? ?? false,
+      remarks: map['remarks'] as String?,
       createdAt: parsedCreatedAt,
       updatedAt: parsedUpdatedAt,
     );
@@ -62,6 +65,7 @@ class MarkModel {
       'classId': classId,
       'marks': marks,
       'isAbsent': isAbsent,
+      'remarks': remarks,
       'createdAt': createdAt != null
           ? Timestamp.fromDate(createdAt!)
           : FieldValue.serverTimestamp(),
@@ -76,6 +80,7 @@ class MarkModel {
     String? classId,
     double? marks,
     bool? isAbsent,
+    String? remarks,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -86,6 +91,7 @@ class MarkModel {
       classId: classId ?? this.classId,
       marks: marks ?? this.marks,
       isAbsent: isAbsent ?? this.isAbsent,
+      remarks: remarks ?? this.remarks,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

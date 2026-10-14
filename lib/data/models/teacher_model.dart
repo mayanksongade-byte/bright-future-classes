@@ -6,7 +6,8 @@ class TeacherModel {
   final String email;
   final String phone;
   final String address;
-  final String subject;
+  final String subject; // Kept for legacy backward compatibility
+  final List<String> subjects;
   final List<String> classIds;
   final String status;
   final String? userId;
@@ -20,12 +21,24 @@ class TeacherModel {
     required this.phone,
     this.address = '',
     this.subject = 'Mathematics',
+    List<String>? subjects,
     required this.classIds,
     this.status = 'active',
     this.userId,
     this.createdAt,
     this.updatedAt,
-  });
+  }) : subjects = (subjects != null && subjects.isNotEmpty)
+            ? subjects.toSet().toList()
+            : [subject];
+
+  bool teachesSubject(String subName) {
+    if (subName.isEmpty) return false;
+    final clean = subName.trim().toLowerCase();
+    for (var s in subjects) {
+      if (s.trim().toLowerCase() == clean) return true;
+    }
+    return subject.trim().toLowerCase() == clean;
+  }
 
   factory TeacherModel.fromMap(Map<String, dynamic> map, [String? docId]) {
     DateTime? parsedCreatedAt;
@@ -50,13 +63,24 @@ class TeacherModel {
       parsedClassIds = rawClassIds.map((e) => e.toString()).toSet().toList();
     }
 
+    List<String> parsedSubjects = [];
+    final rawSubjects = map['subjects'];
+    final legacySub = map['subject'] as String? ?? 'Mathematics';
+
+    if (rawSubjects is List && rawSubjects.isNotEmpty) {
+      parsedSubjects = rawSubjects.map((e) => e.toString()).toSet().toList();
+    } else {
+      parsedSubjects = [legacySub];
+    }
+
     return TeacherModel(
       teacherId: docId ?? map['teacherId'] as String? ?? '',
       name: map['name'] as String? ?? '',
       email: map['email'] as String? ?? '',
       phone: map['phone'] as String? ?? '',
       address: map['address'] as String? ?? '',
-      subject: map['subject'] as String? ?? 'Mathematics',
+      subject: legacySub,
+      subjects: parsedSubjects,
       classIds: parsedClassIds,
       status: map['status'] as String? ?? 'active',
       userId: map['userId'] as String?,
@@ -66,13 +90,17 @@ class TeacherModel {
   }
 
   Map<String, dynamic> toMap() {
+    final cleanSubjects = subjects.toSet().toList();
+    final primarySubject = cleanSubjects.isNotEmpty ? cleanSubjects.first : subject;
+
     return {
       'teacherId': teacherId,
       'name': name,
       'email': email,
       'phone': phone,
       'address': address,
-      'subject': subject,
+      'subject': primarySubject,
+      'subjects': cleanSubjects,
       'classIds': classIds.toSet().toList(),
       'status': status,
       'userId': userId,
@@ -90,6 +118,7 @@ class TeacherModel {
     String? phone,
     String? address,
     String? subject,
+    List<String>? subjects,
     List<String>? classIds,
     String? status,
     String? userId,
@@ -103,6 +132,7 @@ class TeacherModel {
       phone: phone ?? this.phone,
       address: address ?? this.address,
       subject: subject ?? this.subject,
+      subjects: subjects != null ? subjects.toSet().toList() : this.subjects,
       classIds: classIds != null ? classIds.toSet().toList() : this.classIds,
       status: status ?? this.status,
       userId: userId ?? this.userId,

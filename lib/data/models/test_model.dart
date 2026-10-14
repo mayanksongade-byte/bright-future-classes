@@ -10,6 +10,9 @@ class TestModel {
   final double? passingMarks;
   final String description;
   final String createdBy;
+  final String? createdByName;
+  final String? createdByRole;
+  final bool isCancelled;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -23,6 +26,9 @@ class TestModel {
     this.passingMarks,
     this.description = '',
     required this.createdBy,
+    this.createdByName,
+    this.createdByRole,
+    this.isCancelled = false,
     this.createdAt,
     this.updatedAt,
   });
@@ -54,6 +60,9 @@ class TestModel {
       passingMarks: (map['passingMarks'] as num?)?.toDouble(),
       description: map['description'] as String? ?? '',
       createdBy: map['createdBy'] as String? ?? '',
+      createdByName: map['createdByName'] as String?,
+      createdByRole: map['createdByRole'] as String?,
+      isCancelled: map['isCancelled'] as bool? ?? false,
       createdAt: parsedCreatedAt,
       updatedAt: parsedUpdatedAt,
     );
@@ -70,6 +79,9 @@ class TestModel {
       'passingMarks': passingMarks,
       'description': description,
       'createdBy': createdBy,
+      'createdByName': createdByName,
+      'createdByRole': createdByRole,
+      'isCancelled': isCancelled,
       'createdAt': createdAt != null
           ? Timestamp.fromDate(createdAt!)
           : FieldValue.serverTimestamp(),
@@ -87,6 +99,9 @@ class TestModel {
     double? passingMarks,
     String? description,
     String? createdBy,
+    String? createdByName,
+    String? createdByRole,
+    bool? isCancelled,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -100,6 +115,9 @@ class TestModel {
       passingMarks: passingMarks ?? this.passingMarks,
       description: description ?? this.description,
       createdBy: createdBy ?? this.createdBy,
+      createdByName: createdByName ?? this.createdByName,
+      createdByRole: createdByRole ?? this.createdByRole,
+      isCancelled: isCancelled ?? this.isCancelled,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
