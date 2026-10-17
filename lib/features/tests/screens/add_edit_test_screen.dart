@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/teacher_model.dart';
@@ -36,17 +37,8 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
   late DateTime _testDate;
 
   bool _isLoadingClasses = true;
-  bool _isAdmin = false;
   List<ClassModel> _loadedClasses = [];
-  List<String> _availableSubjects = [
-    'Mathematics',
-    'Science',
-    'English',
-    'Computer',
-    'Social Science',
-    'Gujarati',
-    'Hindi',
-  ];
+  List<String> _availableSubjects = [];
 
   @override
   void initState() {
@@ -91,21 +83,44 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
       final isAdmin = role == 'admin';
 
       List<String> subs = [];
+      TeacherModel? teacher;
       if (isAdmin) {
         subs = await FirestoreService().getCentralSubjects();
       } else {
         final teacherId = userDoc?['teacherId'] as String? ?? user.uid;
         final teacherData = await FirestoreService().getTeacherDocument(teacherId);
-        final teacher = teacherData != null ? TeacherModel.fromMap(teacherData, teacherId) : null;
+        teacher = teacherData != null ? TeacherModel.fromMap(teacherData, teacherId) : null;
         subs = teacher?.subjects ?? [teacher?.subject ?? 'Mathematics'];
+      }
+
+      if (!isAdmin && widget.testToEdit != null && teacher != null) {
+        final t = widget.testToEdit!;
+        if (!teacher.classIds.contains(t.classId) || !teacher.teachesSubject(t.subject)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Unauthorized: You are not assigned to this class or subject.'),
+                backgroundColor: AppColors.error,
+              ),
+            );
+            Navigator.of(context).pop();
+          }
+          return;
+        }
       }
 
       if (mounted) {
         setState(() {
-          _isAdmin = isAdmin;
-          _availableSubjects = subs;
-          if (_subjectController.text.isEmpty && subs.isNotEmpty) {
-            _subjectController.text = subs.first;
+          _availableSubjects = subs.toSet().toList();
+          if (widget.testToEdit != null) {
+            _selectedClassId = widget.testToEdit!.classId;
+            if (!_availableSubjects.contains(_subjectController.text) && _availableSubjects.isNotEmpty) {
+              _subjectController.text = _availableSubjects.first;
+            }
+          } else {
+            if (_subjectController.text.isEmpty && _availableSubjects.isNotEmpty) {
+              _subjectController.text = _availableSubjects.first;
+            }
           }
         });
       }
@@ -126,6 +141,7 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
 
       List<ClassModel> classes = [];
       List<String> subjects = [];
+      TeacherModel? teacher;
 
       if (isAdmin) {
         classes = await ClassRepository().getClasses();
@@ -133,7 +149,7 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
       } else {
         final teacherId = userDoc?['teacherId'] as String? ?? user.uid;
         final teacherData = await FirestoreService().getTeacherDocument(teacherId);
-        final teacher = teacherData != null ? TeacherModel.fromMap(teacherData, teacherId) : null;
+        teacher = teacherData != null ? TeacherModel.fromMap(teacherData, teacherId) : null;
         final classIds = teacher?.classIds ?? [];
 
         for (var cId in classIds) {
@@ -145,17 +161,44 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
         subjects = teacher?.subjects ?? [teacher?.subject ?? 'Mathematics'];
       }
 
+      // Verify authorization if editing
+      if (!isAdmin && widget.testToEdit != null && teacher != null) {
+        final t = widget.testToEdit!;
+        if (!teacher.classIds.contains(t.classId) || !teacher.teachesSubject(t.subject)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Unauthorized: You are not assigned to this class or subject.'),
+                backgroundColor: AppColors.error,
+              ),
+            );
+            Navigator.of(context).pop();
+          }
+          return;
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _isAdmin = isAdmin;
           _loadedClasses = classes;
-          _availableSubjects = subjects;
+          _availableSubjects = subjects.toSet().toList();
           _isLoadingClasses = false;
-          if (_selectedClassId == null && classes.isNotEmpty) {
-            _selectedClassId = classes.first.classId;
-          }
-          if (_subjectController.text.isEmpty && subjects.isNotEmpty) {
-            _subjectController.text = subjects.first;
+
+          if (widget.testToEdit != null) {
+            _selectedClassId = widget.testToEdit!.classId;
+            if (!classes.any((c) => c.classId == _selectedClassId) && classes.isNotEmpty) {
+              _selectedClassId = classes.first.classId;
+            }
+            if (!_availableSubjects.contains(_subjectController.text) && _availableSubjects.isNotEmpty) {
+              _subjectController.text = _availableSubjects.first;
+            }
+          } else {
+            if (_selectedClassId == null && classes.isNotEmpty) {
+              _selectedClassId = classes.first.classId;
+            }
+            if (_subjectController.text.isEmpty && _availableSubjects.isNotEmpty) {
+              _subjectController.text = _availableSubjects.first;
+            }
           }
         });
       }
@@ -293,6 +336,22 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
   Widget build(BuildContext context) {
     final isEditing = widget.testToEdit != null;
 
+    if (_isLoadingClasses) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textMain),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          title: Text(isEditing ? 'Edit Test' : 'Create Test'),
+        ),
+        body: const Center(child: AppLoadingIndicator()),
+      );
+    }
+
     // Deduplicate class list by classId
     final Map<String, ClassModel> uniqueClassMap = {};
     final rawClasses = _loadedClasses.isNotEmpty
@@ -316,9 +375,18 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
     }
 
     final classesList = uniqueClassMap.values.toList();
-    final currentSubjectVal = _availableSubjects.contains(_subjectController.text)
+    if (_selectedClassId == null && classesList.isNotEmpty) {
+      _selectedClassId = classesList.first.classId;
+    }
+
+    final distinctSubjects = _availableSubjects.toSet().toList();
+    final currentSubjectVal = distinctSubjects.contains(_subjectController.text)
         ? _subjectController.text
-        : (_availableSubjects.isNotEmpty ? _availableSubjects.first : null);
+        : (distinctSubjects.isNotEmpty ? distinctSubjects.first : null);
+
+    if (currentSubjectVal != null && _subjectController.text != currentSubjectVal) {
+      _subjectController.text = currentSubjectVal;
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -403,31 +471,22 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                             color: AppColors.primaryEmerald, width: 1.5),
                       ),
                     ),
-                    items: _isLoadingClasses
+                    items: classesList.isEmpty
                         ? [
                             const DropdownMenuItem<String?>(
                               value: null,
-                              child: Text('Loading classes...',
+                              child: Text('No classes assigned',
                                   style: TextStyle(
                                       color: AppColors.textSecondary)),
                             )
                           ]
-                        : (classesList.isEmpty
-                            ? [
-                                const DropdownMenuItem<String?>(
-                                  value: null,
-                                  child: Text('No classes assigned',
-                                      style: TextStyle(
-                                          color: AppColors.textSecondary)),
-                                )
-                              ]
-                            : classesList.map((cls) {
-                                return DropdownMenuItem<String?>(
-                                  value: cls.classId,
-                                  child: Text(cls.className,
-                                      overflow: TextOverflow.ellipsis),
-                                );
-                              }).toList()),
+                        : classesList.map((cls) {
+                            return DropdownMenuItem<String?>(
+                              value: cls.classId,
+                              child: Text(cls.className,
+                                  overflow: TextOverflow.ellipsis),
+                            );
+                          }).toList(),
                     onChanged: (val) {
                       if (val != null) {
                         setState(() {
@@ -442,7 +501,7 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                   const Text('Subject', style: AppTextStyles.inputLabel),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
-                    value: currentSubjectVal,
+                    initialValue: currentSubjectVal,
                     isExpanded: true,
                     style: AppTextStyles.inputText,
                     decoration: InputDecoration(
@@ -460,7 +519,7 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                             color: AppColors.primaryEmerald, width: 1.5),
                       ),
                     ),
-                    items: _availableSubjects.map((s) {
+                    items: distinctSubjects.map((s) {
                       return DropdownMenuItem<String>(
                         value: s,
                         child: Text(s, overflow: TextOverflow.ellipsis),

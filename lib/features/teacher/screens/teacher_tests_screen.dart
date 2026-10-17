@@ -3,7 +3,9 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../data/models/teacher_model.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/firestore_service.dart';
 import '../../tests/screens/add_edit_test_screen.dart';
 import '../../tests/screens/enter_marks_screen.dart';
 import '../../tests/screens/test_details_screen.dart';
@@ -23,7 +25,7 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
 
   String _selectedClassFilter = 'All Classes';
   String _selectedSubjectFilter = 'All Subjects';
-  String _selectedStatusFilter = 'All'; // All, Active, Completed, Cancelled
+  String _selectedStatusFilter = 'All'; // All, Active, Completed
 
   @override
   void initState() {
@@ -40,13 +42,53 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
     }
   }
 
+  TeacherModel? _currentTeacher;
+
   Future<void> _loadTeacherData() async {
     final user = _authService.currentUser;
     if (user != null) {
       await _viewModel.fetchTestsData(teacherUid: user.uid);
+      try {
+        final userDoc = await FirestoreService().getUserDocument(user.uid);
+        final customTeacherId = userDoc?['teacherId'] as String? ?? '';
+        final customUserId = userDoc?['userId'] as String? ?? '';
+
+        Map<String, dynamic>? teacherData = await FirestoreService().getTeacherDocument(user.uid);
+        String resolvedDocId = user.uid;
+
+        if (teacherData == null && customTeacherId.isNotEmpty) {
+          teacherData = await FirestoreService().getTeacherDocument(customTeacherId);
+          resolvedDocId = customTeacherId;
+        }
+
+        if (teacherData == null) {
+          final teacherDocs = await FirestoreService().getTeachersDocuments();
+          for (var doc in teacherDocs) {
+            final data = doc.data();
+            final uidVal = data['uid'] as String? ?? '';
+            final userIdVal = data['userId'] as String? ?? '';
+            final tIdVal = data['teacherId'] as String? ?? '';
+
+            if (doc.id == user.uid ||
+                doc.id == customTeacherId ||
+                uidVal == user.uid ||
+                userIdVal == customUserId ||
+                tIdVal == customTeacherId) {
+              teacherData = data;
+              resolvedDocId = doc.id;
+              break;
+            }
+          }
+        }
+
+        if (teacherData != null) {
+          _currentTeacher = TeacherModel.fromMap(teacherData, resolvedDocId);
+        }
+      } catch (_) {}
     } else {
       await _viewModel.fetchTestsData();
     }
+    if (mounted) setState(() {});
   }
 
   void _onViewModelChange() {
@@ -81,9 +123,6 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
       if (_selectedStatusFilter == 'Completed' && item.status != 'Completed') {
         return false;
       }
-      if (_selectedStatusFilter == 'Cancelled' && !item.test.isCancelled) {
-        return false;
-      }
       if (query.isNotEmpty) {
         final testName = item.test.testName.toLowerCase();
         final subject = item.test.subject.toLowerCase();
@@ -104,13 +143,26 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
       ..._viewModel.classes.map((c) => c.className),
     ];
 
-    final Set<String> subjectSet = {'All Subjects'};
+    final Set<String> subjectSet = {};
     for (var item in _viewModel.testItems) {
-      if (item.test.subject.isNotEmpty) {
-        subjectSet.add(item.test.subject);
+      final sub = item.test.subject.trim();
+      if (sub.isNotEmpty) {
+        bool isAssigned = true;
+        if (_currentTeacher != null) {
+          final assignedClassOk = item.classModel != null && _currentTeacher!.classIds.contains(item.classModel!.classId);
+          final teachesSubjectOk = _currentTeacher!.teachesSubject(sub);
+          isAssigned = assignedClassOk && teachesSubjectOk;
+        }
+        if (isAssigned) {
+          subjectSet.add(sub);
+        }
       }
     }
-    final List<String> subjectNames = subjectSet.toList();
+    final List<String> subjectNames = ['All Subjects', ...subjectSet.toList()..sort()];
+
+    if (!subjectNames.contains(_selectedSubjectFilter)) {
+      _selectedSubjectFilter = 'All Subjects';
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -180,8 +232,11 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 8,
+                                  alignment: WrapAlignment.spaceBetween,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     const Text(
                                       'Filter Tests',
@@ -191,7 +246,10 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
                                         color: AppColors.textMain,
                                       ),
                                     ),
-                                    Row(
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
                                       children: [
                                         if (_selectedClassFilter != 'All Classes' ||
                                             _selectedSubjectFilter != 'All Subjects' ||
@@ -211,7 +269,6 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
                                                     color: AppColors.error,
                                                     fontSize: 12)),
                                           ),
-                                        const SizedBox(width: 8),
                                         ElevatedButton.icon(
                                           onPressed: () async {
                                             await Navigator.of(context).push(
@@ -239,97 +296,189 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: DropdownButtonFormField<String>(
-                                        initialValue: classNames.contains(_selectedClassFilter) ? _selectedClassFilter : classNames.first,
-                                        isExpanded: true,
-                                        style: AppTextStyles.inputText,
-                                        decoration: InputDecoration(
-                                          labelText: 'Class',
-                                          filled: true,
-                                          fillColor: AppColors.background,
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                        ),
-                                        items: classNames
-                                            .map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis)))
-                                            .toList(),
-                                        onChanged: (val) {
-                                          if (val != null) setState(() => _selectedClassFilter = val);
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: DropdownButtonFormField<String>(
-                                        initialValue: subjectNames.contains(_selectedSubjectFilter) ? _selectedSubjectFilter : subjectNames.first,
-                                        isExpanded: true,
-                                        style: AppTextStyles.inputText,
-                                        decoration: InputDecoration(
-                                          labelText: 'Subject',
-                                          filled: true,
-                                          fillColor: AppColors.background,
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                        ),
-                                        items: subjectNames
-                                            .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
-                                            .toList(),
-                                        onChanged: (val) {
-                                          if (val != null) setState(() => _selectedSubjectFilter = val);
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: DropdownButtonFormField<String>(
-                                        initialValue: _selectedStatusFilter,
-                                        isExpanded: true,
-                                        style: AppTextStyles.inputText,
-                                        decoration: InputDecoration(
-                                          labelText: 'Status',
-                                          filled: true,
-                                          fillColor: AppColors.background,
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                        ),
-                                        items: const ['All', 'Active', 'Completed', 'Cancelled']
-                                            .map((st) => DropdownMenuItem(value: st, child: Text(st, overflow: TextOverflow.ellipsis)))
-                                            .toList(),
-                                        onChanged: (val) {
-                                          if (val != null) setState(() => _selectedStatusFilter = val);
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _searchController,
-                                        style: AppTextStyles.inputText,
-                                        decoration: InputDecoration(
-                                          labelText: 'Search Test Name / Subject',
-                                          labelStyle: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                                          filled: true,
-                                          fillColor: AppColors.background,
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: const BorderSide(color: AppColors.border),
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final isWide = constraints.maxWidth > 500;
+                                    if (isWide) {
+                                      return Column(
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: DropdownButtonFormField<String>(
+                                                  initialValue: classNames.contains(_selectedClassFilter) ? _selectedClassFilter : classNames.first,
+                                                  isExpanded: true,
+                                                  style: AppTextStyles.inputText,
+                                                  decoration: InputDecoration(
+                                                    labelText: 'Class',
+                                                    filled: true,
+                                                    fillColor: AppColors.background,
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                  ),
+                                                  items: classNames
+                                                      .map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis)))
+                                                      .toList(),
+                                                  onChanged: (val) {
+                                                    if (val != null) setState(() => _selectedClassFilter = val);
+                                                  },
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: DropdownButtonFormField<String>(
+                                                  initialValue: subjectNames.contains(_selectedSubjectFilter) ? _selectedSubjectFilter : subjectNames.first,
+                                                  isExpanded: true,
+                                                  style: AppTextStyles.inputText,
+                                                  decoration: InputDecoration(
+                                                    labelText: 'Subject',
+                                                    filled: true,
+                                                    fillColor: AppColors.background,
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                  ),
+                                                  items: subjectNames
+                                                      .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
+                                                      .toList(),
+                                                  onChanged: (val) {
+                                                    if (val != null) setState(() => _selectedSubjectFilter = val);
+                                                  },
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(10),
-                                            borderSide: const BorderSide(color: AppColors.primaryEmerald, width: 1.5),
+                                          const SizedBox(height: 12),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: DropdownButtonFormField<String>(
+                                                  initialValue: _selectedStatusFilter,
+                                                  isExpanded: true,
+                                                  style: AppTextStyles.inputText,
+                                                  decoration: InputDecoration(
+                                                    labelText: 'Status',
+                                                    filled: true,
+                                                    fillColor: AppColors.background,
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                  ),
+                                                  items: const ['All', 'Active', 'Completed']
+                                                      .map((st) => DropdownMenuItem(value: st, child: Text(st, overflow: TextOverflow.ellipsis)))
+                                                      .toList(),
+                                                  onChanged: (val) {
+                                                    if (val != null) setState(() => _selectedStatusFilter = val);
+                                                  },
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: TextField(
+                                                  controller: _searchController,
+                                                  style: AppTextStyles.inputText,
+                                                  decoration: InputDecoration(
+                                                    labelText: 'Search Test Name / Subject',
+                                                    labelStyle: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                                    filled: true,
+                                                    fillColor: AppColors.background,
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                                    enabledBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: const BorderSide(color: AppColors.border),
+                                                    ),
+                                                    focusedBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: const BorderSide(color: AppColors.primaryEmerald, width: 1.5),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                        ],
+                                      );
+                                    } else {
+                                      return Column(
+                                        children: [
+                                          DropdownButtonFormField<String>(
+                                            initialValue: classNames.contains(_selectedClassFilter) ? _selectedClassFilter : classNames.first,
+                                            isExpanded: true,
+                                            style: AppTextStyles.inputText,
+                                            decoration: InputDecoration(
+                                              labelText: 'Class',
+                                              filled: true,
+                                              fillColor: AppColors.background,
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                            ),
+                                            items: classNames
+                                                .map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis)))
+                                                .toList(),
+                                            onChanged: (val) {
+                                              if (val != null) setState(() => _selectedClassFilter = val);
+                                            },
+                                          ),
+                                          const SizedBox(height: 12),
+                                          DropdownButtonFormField<String>(
+                                            initialValue: subjectNames.contains(_selectedSubjectFilter) ? _selectedSubjectFilter : subjectNames.first,
+                                            isExpanded: true,
+                                            style: AppTextStyles.inputText,
+                                            decoration: InputDecoration(
+                                              labelText: 'Subject',
+                                              filled: true,
+                                              fillColor: AppColors.background,
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                            ),
+                                            items: subjectNames
+                                                .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
+                                                .toList(),
+                                            onChanged: (val) {
+                                              if (val != null) setState(() => _selectedSubjectFilter = val);
+                                            },
+                                          ),
+                                          const SizedBox(height: 12),
+                                          DropdownButtonFormField<String>(
+                                            initialValue: _selectedStatusFilter,
+                                            isExpanded: true,
+                                            style: AppTextStyles.inputText,
+                                            decoration: InputDecoration(
+                                              labelText: 'Status',
+                                              filled: true,
+                                              fillColor: AppColors.background,
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                            ),
+                                            items: const ['All', 'Active', 'Completed']
+                                                .map((st) => DropdownMenuItem(value: st, child: Text(st, overflow: TextOverflow.ellipsis)))
+                                                .toList(),
+                                            onChanged: (val) {
+                                              if (val != null) setState(() => _selectedStatusFilter = val);
+                                            },
+                                          ),
+                                          const SizedBox(height: 12),
+                                          TextField(
+                                            controller: _searchController,
+                                            style: AppTextStyles.inputText,
+                                            decoration: InputDecoration(
+                                              labelText: 'Search Test Name / Subject',
+                                              labelStyle: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                              filled: true,
+                                              fillColor: AppColors.background,
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(10),
+                                                borderSide: const BorderSide(color: AppColors.border),
+                                              ),
+                                              focusedBorder: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(10),
+                                                borderSide: const BorderSide(color: AppColors.primaryEmerald, width: 1.5),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    }
+                                  },
                                 ),
                               ],
                             ),
@@ -613,7 +762,7 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
           ),
           const SizedBox(height: 14),
 
-          // Action Buttons (No Cancel button on Teacher cards)
+          // Action Buttons (Enter Marks & Details only)
           Wrap(
             spacing: 8,
             runSpacing: 8,

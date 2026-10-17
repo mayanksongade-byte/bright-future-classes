@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/mark_audit_model.dart';
 import '../models/mark_model.dart';
+import '../models/notification_model.dart';
 import '../models/test_model.dart';
 import '../services/firestore_service.dart';
 
@@ -54,14 +55,21 @@ class TestRepository {
     }
   }
 
-  Future<void> deleteTest(String testId) async {
+  Future<void> deleteTest(String testId, {NotificationModel? adminNotification}) async {
     try {
-      // Delete associated marks first
-      await _firestoreService.deleteMarksForTest(testId);
-      await _firestoreService.deleteTestDocument(testId);
+      // Historical marks and marks audit/history are preserved
+      if (adminNotification != null) {
+        await _firestoreService.deleteTestWithNotification(
+          testId,
+          adminNotification.toMap(),
+          adminNotification.notificationId,
+        );
+      } else {
+        await _firestoreService.deleteTestDocument(testId);
+      }
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw Exception('Permission denied. Only active admins can delete tests.');
+        throw Exception('Permission denied. You do not have permission to delete this test.');
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {

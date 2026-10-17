@@ -412,6 +412,16 @@ class FirestoreService {
     await _firestore.collection('tests').doc(testId).delete();
   }
 
+  Future<void> deleteTestWithNotification(
+      String testId, Map<String, dynamic> notificationData, String notificationId) async {
+    final batch = _firestore.batch();
+    final notifRef = _firestore.collection('notifications').doc(notificationId);
+    batch.set(notifRef, notificationData);
+    final testRef = _firestore.collection('tests').doc(testId);
+    batch.delete(testRef);
+    await batch.commit();
+  }
+
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllTestDocuments() async {
     final snapshot = await _firestore
         .collection('tests')
@@ -468,8 +478,17 @@ class FirestoreService {
     Query<Map<String, dynamic>> query = _firestore
         .collection('marks_audit')
         .where('testId', isEqualTo: testId);
-    if (classId != null && classId.isNotEmpty) {
-      query = query.where('classId', isEqualTo: classId);
+    String? targetClassId = classId;
+    if (targetClassId == null || targetClassId.isEmpty) {
+      try {
+        final testDoc = await _firestore.collection('tests').doc(testId).get();
+        if (testDoc.exists) {
+          targetClassId = testDoc.data()?['classId'] as String?;
+        }
+      } catch (_) {}
+    }
+    if (targetClassId != null && targetClassId.isNotEmpty) {
+      query = query.where('classId', isEqualTo: targetClassId);
     }
     final snapshot = await query.get();
     return snapshot.docs;
@@ -487,8 +506,17 @@ class FirestoreService {
     Query<Map<String, dynamic>> query = _firestore
         .collection('marks')
         .where('testId', isEqualTo: testId);
-    if (classId != null && classId.isNotEmpty) {
-      query = query.where('classId', isEqualTo: classId);
+    String? targetClassId = classId;
+    if (targetClassId == null || targetClassId.isEmpty) {
+      try {
+        final testDoc = await _firestore.collection('tests').doc(testId).get();
+        if (testDoc.exists) {
+          targetClassId = testDoc.data()?['classId'] as String?;
+        }
+      } catch (_) {}
+    }
+    if (targetClassId != null && targetClassId.isNotEmpty) {
+      query = query.where('classId', isEqualTo: targetClassId);
     }
     final snapshot = await query.get();
     return snapshot.docs;

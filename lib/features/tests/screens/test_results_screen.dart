@@ -25,7 +25,10 @@ class _TestResultsScreenState extends State<TestResultsScreen> {
 
   Future<void> _loadAudits() async {
     try {
-      final audits = await _testRepository.getMarkAuditsForTest(widget.testItem.test.testId);
+      final audits = await _testRepository.getMarkAuditsForTest(
+        widget.testItem.test.testId,
+        classId: widget.testItem.test.classId,
+      );
       final Map<String, MarkAuditModel> map = {};
       for (var a in audits) {
         map[a.studentId] = a;

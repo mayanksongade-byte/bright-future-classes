@@ -202,7 +202,7 @@ class ReportsViewModel extends ChangeNotifier {
       _marksMap = {};
       for (var test in _tests) {
         try {
-          final marks = await _testRepository.getMarksForTest(test.testId);
+          final marks = await _testRepository.getMarksForTest(test.testId, classId: test.classId);
           _marksMap[test.testId] = marks;
         } catch (_) {
           _marksMap[test.testId] = [];

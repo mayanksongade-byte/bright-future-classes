@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/repositories/test_repository.dart';
+import '../../../data/services/firestore_service.dart';
 import '../view_models/tests_view_model.dart';
 import 'add_edit_test_screen.dart';
 import 'enter_marks_screen.dart';
@@ -54,59 +57,138 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
     }
   }
 
+  bool _isDeleting = false;
+
   Future<void> _confirmDelete() async {
+    final user = FirebaseAuth.instance.currentUser;
+    bool isTeacher = false;
+    if (user != null) {
+      try {
+        final userDoc = await FirestoreService().getUserDocument(user.uid);
+        if (!mounted) return;
+        final role = (userDoc?['role'] as String? ?? '').toLowerCase();
+        isTeacher = role == 'teacher';
+      } catch (_) {}
+    }
+
+    final TextEditingController reasonController = TextEditingController();
+    String? validationError;
+
     final confirmed = await showDialog<bool>(
       context: context,
+      barrierDismissible: !_isDeleting,
       builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text(
-            'Delete Test?',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textMain,
-            ),
-          ),
-          content: const Text(
-            'Are you sure you want to delete this test and its associated student marks?',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel',
-                  style: TextStyle(color: AppColors.textSecondary)),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.error,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                'Delete Test?',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textMain,
                 ),
               ),
-              child: const Text('Delete'),
-            ),
-          ],
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Are you sure you want to delete this test? This action cannot be undone.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  if (isTeacher) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Deletion Reason (Required)',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textMain,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: reasonController,
+                      style: AppTextStyles.inputText,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        hintText: 'Enter reason for deleting this test...',
+                        hintStyle: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                        errorText: validationError,
+                        filled: true,
+                        fillColor: AppColors.background,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onChanged: (_) {
+                        if (validationError != null) {
+                          setDialogState(() => validationError = null);
+                        }
+                      },
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: _isDeleting ? null : () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                ),
+                ElevatedButton(
+                  onPressed: _isDeleting
+                      ? null
+                      : () async {
+                          final reason = reasonController.text.trim();
+                          if (isTeacher && reason.isEmpty) {
+                            setDialogState(() {
+                              validationError = 'Deletion reason is required.';
+                            });
+                            return;
+                          }
+                          Navigator.of(dialogContext).pop(true);
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: _isDeleting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Delete'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
 
     if (confirmed == true && mounted) {
-      final success = await _viewModel.deleteTest(_item.test.testId);
+      setState(() => _isDeleting = true);
+      final reason = reasonController.text.trim();
+      final success = await _viewModel.deleteTest(_item.test.testId, deletionReason: reason);
       if (!mounted) return;
+      setState(() => _isDeleting = false);
+
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Test deleted successfully.'),
             backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
           ),
         );
         Navigator.of(context).pop(true);
@@ -115,6 +197,7 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
           SnackBar(
             content: Text(_viewModel.errorMessage!),
             backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -122,7 +205,7 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
   }
 
   void _showAuditHistoryModal() async {
-    final audits = await TestRepository().getMarkAuditsForTest(_item.test.testId);
+    final audits = await TestRepository().getMarkAuditsForTest(_item.test.testId, classId: _item.test.classId);
     if (!mounted) return;
 
     showModalBottomSheet(

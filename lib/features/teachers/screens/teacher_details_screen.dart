@@ -190,7 +190,7 @@ class _TeacherDetailsScreenState extends State<TeacherDetailsScreen> {
                           children: [
                             _buildInfoRow('Full Name', _teacher.name),
                             _buildInfoRow('Teacher ID', _teacher.teacherId),
-                            _buildInfoRow('Subject', _teacher.subject),
+                            _buildSubjectsRow(),
                             _buildInfoRow('Status', isActive ? 'Active' : 'Inactive'),
                           ],
                         ),
@@ -614,6 +614,62 @@ class _TeacherDetailsScreenState extends State<TeacherDetailsScreen> {
                 color: AppColors.textMain,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubjectsRow() {
+    final subs = _teacher.subjects.isNotEmpty 
+        ? _teacher.subjects.toSet().toList() 
+        : (_teacher.subject.isNotEmpty ? [_teacher.subject] : <String>[]);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(
+            width: 130,
+            child: Text(
+              'Subjects',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: subs.isEmpty
+                ? const Text(
+                    'No subjects assigned',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textMain,
+                    ),
+                  )
+                : Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: subs.map((sub) => Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.lightEmerald,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        sub,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.darkEmerald,
+                        ),
+                      ),
+                    )).toList(),
+                  ),
           ),
         ],
       ),

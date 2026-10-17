@@ -7,9 +7,20 @@ service cloud.firestore {
       return request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && (
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == "admin"
-          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == "Admin"
-          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == "ADMIN"
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ["admin", "Admin", "ADMIN"]
+        )
+        && (
+          !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.keys().hasAll(['isActive'])
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isActive', true) == true
+        );
+    }
+
+    // Helper function: Check if requesting user is an active teacher
+    function isTeacher() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ["teacher", "Teacher", "TEACHER"]
         )
         && (
           !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.keys().hasAll(['isActive'])
@@ -19,18 +30,73 @@ service cloud.firestore {
 
     // Helper function: Check if requesting user is an assigned teacher for the class
     function isAssignedTeacher(classId) {
-      return request.auth != null
+      return isTeacher()
         && classId != null
         && classId != ""
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && (
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == "teacher"
-          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == "Teacher"
-          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == "TEACHER"
-        )
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '') != ""
-        && exists(/databases/$(database)/documents/teachers/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '')))
-        && classId in get(/databases/$(database)/documents/teachers/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', ''))).data.get('classIds', []);
+          (
+            exists(/databases/$(database)/documents/teachers/$(request.auth.uid))
+            && classId in get(/databases/$(database)/documents/teachers/$(request.auth.uid)).data.get('classIds', [])
+          )
+          || (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '') != ""
+            && exists(/databases/$(database)/documents/teachers/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '')))
+            && classId in get(/databases/$(database)/documents/teachers/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', ''))).data.get('classIds', [])
+          )
+        );
+    }
+
+    // Helper function: Check if requesting user is an assigned teacher for the class and subject
+    function isAssignedTeacherForSubject(classId, subject) {
+      return isTeacher()
+        && classId != null
+        && classId != ""
+        && subject != null
+        && subject != ""
+        && (
+          (
+            exists(/databases/$(database)/documents/teachers/$(request.auth.uid))
+            && classId in get(/databases/$(database)/documents/teachers/$(request.auth.uid)).data.get('classIds', [])
+            && (
+              subject in get(/databases/$(database)/documents/teachers/$(request.auth.uid)).data.get('subjects', [])
+              || subject == get(/databases/$(database)/documents/teachers/$(request.auth.uid)).data.get('subject', '')
+            )
+          )
+          || (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '') != ""
+            && exists(/databases/$(database)/documents/teachers/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '')))
+            && classId in get(/databases/$(database)/documents/teachers/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', ''))).data.get('classIds', [])
+            && (
+              subject in get(/databases/$(database)/documents/teachers/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', ''))).data.get('subjects', [])
+              || subject == get(/databases/$(database)/documents/teachers/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', ''))).data.get('subject', '')
+            )
+          )
+        );
+    }
+
+    // Helper function: Check if teacher is authorized for a test reference ID or test deletion metadata
+    function isTeacherAuthorizedForTestRef(refId) {
+      return request.auth != null
+        && (
+          (
+            refId != null
+            && refId != ''
+            && exists(/databases/$(database)/documents/tests/$(refId))
+            && isAssignedTeacherForSubject(
+                 get(/databases/$(database)/documents/tests/$(refId)).data.get('classId', ''),
+                 get(/databases/$(database)/documents/tests/$(refId)).data.get('subject', '')
+               )
+          )
+          || (
+            request.resource.data.get('type', '') == 'test_deleted'
+            && request.resource.data.get('metadata', {}).get('classId', '') != ''
+            && request.resource.data.get('metadata', {}).get('subject', '') != ''
+            && isAssignedTeacherForSubject(
+                 request.resource.data.metadata.get('classId', ''),
+                 request.resource.data.metadata.get('subject', '')
+               )
+          )
+        );
     }
 
     // Helper function: Check if requesting user is the student owner
@@ -85,6 +151,7 @@ service cloud.firestore {
       allow read: if request.auth != null && (
         isActiveAdmin()
         || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '') == teacherId)
+        || (request.auth.uid == teacherId)
       );
       allow create, update, delete: if isActiveAdmin();
     }
@@ -155,7 +222,7 @@ service cloud.firestore {
       allow read, create, update, delete: if isActiveAdmin();
     }
 
-    // Tests & Marks Collections: Active Admin can manage tests/marks; Assigned teachers can read/create/update
+    // Tests & Marks Collections: Active Admin can manage tests/marks; Assigned teachers can read/create/update/delete
     match /tests/{testId} {
       allow read: if request.auth != null && (
         isActiveAdmin()
@@ -163,19 +230,35 @@ service cloud.firestore {
       );
       allow create: if request.auth != null && (
         isActiveAdmin()
-        || (request.resource != null && request.resource.data.get('classId', '') != '' && isAssignedTeacher(request.resource.data.classId))
+        || (
+          request.resource != null
+          && request.resource.data.get('classId', '') != ''
+          && request.resource.data.get('subject', '') != ''
+          && isAssignedTeacherForSubject(request.resource.data.classId, request.resource.data.subject)
+        )
       );
       allow update: if request.auth != null && (
         isActiveAdmin()
         || (
           resource != null
           && resource.data.get('classId', '') != ''
-          && isAssignedTeacher(resource.data.classId)
+          && resource.data.get('subject', '') != ''
+          && isAssignedTeacherForSubject(resource.data.classId, resource.data.subject)
           && request.resource.data.get('classId', '') == resource.data.classId
+          && request.resource.data.get('subject', '') == resource.data.subject
         )
       );
-      allow delete: if isActiveAdmin();
+      allow delete: if request.auth != null && (
+        isActiveAdmin()
+        || (
+          resource != null
+          && resource.data.get('classId', '') != ''
+          && resource.data.get('subject', '') != ''
+          && isAssignedTeacherForSubject(resource.data.classId, resource.data.subject)
+        )
+      );
     }
+
     match /marks/{markId} {
       allow read: if request.auth != null && (
         isActiveAdmin()
@@ -184,18 +267,48 @@ service cloud.firestore {
       );
       allow create: if request.auth != null && (
         isActiveAdmin()
-        || (request.resource != null && request.resource.data.get('classId', '') != '' && isAssignedTeacher(request.resource.data.classId))
+        || (
+          request.resource != null
+          && request.resource.data.get('testId', '') != ''
+          && request.resource.data.get('classId', '') != ''
+          && request.resource.data.get('studentId', '') != ''
+          && exists(/databases/$(database)/documents/tests/$(request.resource.data.testId))
+          && request.resource.data.get('classId', '') == get(/databases/$(database)/documents/tests/$(request.resource.data.testId)).data.get('classId', '')
+          && isAssignedTeacherForSubject(
+               get(/databases/$(database)/documents/tests/$(request.resource.data.testId)).data.get('classId', ''),
+               get(/databases/$(database)/documents/tests/$(request.resource.data.testId)).data.get('subject', '')
+             )
+          && (
+            !exists(/databases/$(database)/documents/students/$(request.resource.data.studentId))
+            || !get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.keys().hasAll(['classId'])
+            || get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.get('classId', '') == ''
+            || get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.get('classId', '') == request.resource.data.classId
+          )
+        )
       );
       allow update: if request.auth != null && (
         isActiveAdmin()
-
         || (
           resource != null
-          && resource.data.get('classId', '') != ''
-          && isAssignedTeacher(resource.data.
-            classId)
-          && request.resource.data.get('classId', '') == resource.data.classId
-          && request.resource.data.get('studentId', '') == resource.data.studentId
+          && resource.data.get('testId', '') != ''
+          && exists(/databases/$(database)/documents/tests/$(resource.data.testId))
+          && isAssignedTeacherForSubject(
+               get(/databases/$(database)/documents/tests/$(resource.data.testId)).data.get('classId', ''),
+               get(/databases/$(database)/documents/tests/$(resource.data.testId)).data.get('subject', '')
+             )
+          && request.resource.data.get('testId', '') == resource.data.get('testId', '')
+          && (
+            !resource.data.keys().hasAll(['classId'])
+            || resource.data.get('classId', '') == ''
+            || request.resource.data.get('classId', '') == resource.data.classId
+          )
+          && request.resource.data.get('studentId', '') == resource.data.get('studentId', '')
+          && (
+            !exists(/databases/$(database)/documents/students/$(request.resource.data.studentId))
+            || !get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.keys().hasAll(['classId'])
+            || get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.get('classId', '') == ''
+            || get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.get('classId', '') == request.resource.data.classId
+          )
         )
       );
       allow delete: if isActiveAdmin();
@@ -209,7 +322,18 @@ service cloud.firestore {
       );
       allow create: if request.auth != null && (
         isActiveAdmin()
-        || (request.resource != null && request.resource.data.get('classId', '') != '' && isAssignedTeacher(request.resource.data.classId))
+        || (
+          request.resource != null
+          && request.resource.data.get('testId', '') != ''
+          && request.resource.data.get('classId', '') != ''
+          && exists(/databases/$(database)/documents/tests/$(request.resource.data.testId))
+          && request.resource.data.get('classId', '') == get(/databases/$(database)/documents/tests/$(request.resource.data.testId)).data.get('classId', '')
+          && isAssignedTeacherForSubject(
+               get(/databases/$(database)/documents/tests/$(request.resource.data.testId)).data.get('classId', ''),
+               get(/databases/$(database)/documents/tests/$(request.resource.data.testId)).data.get('subject', '')
+             )
+          && request.resource.data.get('editedByUid', '') == request.auth.uid
+        )
       );
       allow update, delete: if isActiveAdmin();
     }
@@ -254,24 +378,30 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow read: if request.auth != null && (
         isActiveAdmin()
-        || resource.data.recipientId == request.auth.uid
-        || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == "admin" && resource.data.get('recipientRole', '') == "admin")
+        || resource.data.get('recipientId', '') == request.auth.uid
+        || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ["admin", "Admin", "ADMIN"] && resource.data.get('recipientRole', '') == "admin")
       );
       allow create: if request.auth != null && (
         isActiveAdmin()
-        || request.resource.data.recipientId == request.auth.uid
-        || request.resource.data.get('recipientRole', '') == "admin"
+        || request.resource.data.get('recipientId', '') == request.auth.uid
+        || (
+          request.resource.data.get('recipientRole', '') == "admin"
+          && request.resource.data.get('referenceType', '') == 'test'
+          && request.resource.data.get('referenceId', '') != ''
+          && request.resource.data.get('type', '') in ['test_created', 'test_updated', 'marks_updated', 'test_deleted']
+          && isTeacherAuthorizedForTestRef(request.resource.data.referenceId)
+        )
       );
       allow update: if request.auth != null && (
         isActiveAdmin()
         || (
-          resource.data.recipientId == request.auth.uid
+          resource.data.get('recipientId', '') == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'updatedAt'])
         )
       );
       allow delete: if request.auth != null && (
         isActiveAdmin()
-        || (resource != null && resource.data.recipientId == request.auth.uid)
+        || (resource != null && resource.data.get('recipientId', '') == request.auth.uid)
       );
     }
 

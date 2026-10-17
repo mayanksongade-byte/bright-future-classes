@@ -3,11 +3,17 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../data/models/attendance_audit_model.dart';
 import '../../../data/models/attendance_model.dart';
+import '../../../data/models/class_model.dart';
 import '../../../data/models/notification_model.dart';
+import '../../../data/models/student_model.dart';
 import '../../../data/repositories/attendance_repository.dart';
 import '../../../data/repositories/notification_repository.dart';
+import '../../../data/repositories/test_repository.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/firestore_service.dart';
+import '../../notifications/screens/notification_details_screen.dart';
+import '../../tests/screens/test_details_screen.dart';
+import '../../tests/view_models/tests_view_model.dart';
 
 class TeacherNotificationsScreen extends StatefulWidget {
   const TeacherNotificationsScreen({super.key});
@@ -21,6 +27,7 @@ class _TeacherNotificationsScreenState
     extends State<TeacherNotificationsScreen> {
   final NotificationRepository _notificationRepository = NotificationRepository();
   final AttendanceRepository _attendanceRepository = AttendanceRepository();
+  final TestRepository _testRepository = TestRepository();
   final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
 
@@ -42,11 +49,9 @@ class _TeacherNotificationsScreenState
         final classId = parts[0];
         final date = parts.sublist(1).join('_');
         
-        // Load attendance and audits for this session
         final attendanceRecords = await _attendanceRepository.getAttendanceForClassAndDate(classId, date);
         final audits = await _attendanceRepository.getAuditsForClassAndDate(classId, date);
 
-        // Fetch student names using class-scoped query to satisfy Teacher Firestore Security Rules
         final Map<String, String> studentNamesMap = {};
         try {
           final studentDocs = await _firestoreService.getStudentsDocumentsByClassId(classId);
@@ -65,11 +70,8 @@ class _TeacherNotificationsScreenState
               }
             }
           }
-        } catch (e) {
-          debugPrint('[TeacherNotificationsScreen] Error loading class student names for classId "$classId": $e');
-        }
+        } catch (_) {}
 
-        // Fallback: If map is still empty, try general students list if permitted
         if (studentNamesMap.isEmpty) {
           try {
             final allStudentDocs = await _firestoreService.getStudentsDocuments();
@@ -88,15 +90,50 @@ class _TeacherNotificationsScreenState
                 }
               }
             }
-          } catch (e) {
-            debugPrint('[TeacherNotificationsScreen] Error loading all student documents: $e');
-          }
+          } catch (_) {}
         }
 
         if (!mounted) return;
         _showTeacherAttendanceAuditModal(classId, date, attendanceRecords, audits, studentNamesMap);
+        return;
       }
+    } else if (notif.referenceType == 'test' && notif.referenceId != null && notif.referenceId!.isNotEmpty) {
+      try {
+        final testModel = await _testRepository.getTest(notif.referenceId!);
+        if (testModel != null) {
+          final classModel = await _firestoreService.getClassDocument(testModel.classId);
+          final parsedClass = classModel != null ? ClassModel.fromMap(classModel, testModel.classId) : null;
+          final marks = await _testRepository.getMarksForTest(testModel.testId, classId: testModel.classId);
+          final students = await _firestoreService.getStudentsDocumentsByClassId(testModel.classId);
+          final studentModels = students.map((s) => StudentModel.fromMap(s.data(), s.id)).toList();
+          final audits = await _testRepository.getMarkAuditsForTest(testModel.testId, classId: testModel.classId);
+
+          final testItem = TestItem(
+            test: testModel,
+            classModel: parsedClass,
+            marks: marks,
+            audits: audits,
+            studentsInClass: studentModels,
+          );
+
+          if (!mounted) return;
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => TestDetailsScreen(testItem: testItem),
+            ),
+          );
+          return;
+        }
+      } catch (_) {}
     }
+
+    // Default full details view: NotificationDetailsScreen
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => NotificationDetailsScreen(notification: notif),
+      ),
+    );
   }
 
   void _confirmDeleteNotification(NotificationModel notif, String currentUserUid) {
@@ -171,7 +208,6 @@ class _TeacherNotificationsScreenState
       if (studentNamesMap.containsKey(normalized)) {
         return studentNamesMap[normalized]!;
       }
-      debugPrint('[TeacherNotificationsScreen] DIAGNOSTIC: Student record not found for studentId: "$studentId" in classId "$classId". Total mapped keys: ${studentNamesMap.length}');
       return 'Student ($studentId)';
     }
 
@@ -424,6 +460,33 @@ class _TeacherNotificationsScreenState
             color: AppColors.textMain,
           ),
         ),
+        actions: [
+          StreamBuilder<List<NotificationModel>>(
+            stream: user != null ? _notificationRepository.streamNotificationsForRecipient(user.uid) : Stream.value([]),
+            builder: (context, snapshot) {
+              final unreadCount = (snapshot.data ?? []).where((n) => !n.isRead).length;
+              if (unreadCount == 0) return const SizedBox.shrink();
+              return TextButton(
+                onPressed: () async {
+                  if (user != null) {
+                    try {
+                      await _notificationRepository.markAllAsRead(user.uid);
+                    } catch (_) {}
+                  }
+                },
+                child: const Text(
+                  'Mark all as read',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primaryEmerald,
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: AppColors.border, height: 1),
@@ -439,7 +502,7 @@ class _TeacherNotificationsScreenState
                     return const Center(child: AppLoadingIndicator());
                   }
                   if (snapshot.hasError) {
-                    return Center(
+                    return const Center(
                       child: Text(
                         'Unable to load notifications.',
                         style: TextStyle(color: AppColors.textSecondary),
@@ -473,116 +536,134 @@ class _TeacherNotificationsScreenState
                       final notif = notifications[index];
                       final bool isRead = notif.isRead;
 
-                      return InkWell(
-                        onTap: () => _handleNotificationTap(notif),
-                        borderRadius: BorderRadius.circular(16),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
+                      return Dismissible(
+                        key: Key(notif.notificationId),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
                           decoration: BoxDecoration(
-                            color: isRead
-                                ? AppColors.surface
-                                : AppColors.primaryEmerald
-                                    .withValues(alpha: 0.04),
+                            color: AppColors.error,
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: isRead
-                                  ? AppColors.border
-                                  : AppColors.primaryEmerald
-                                      .withValues(alpha: 0.3),
-                            ),
                           ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF3E8FF),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(
-                                  Icons.notifications_none_rounded,
-                                  color: AppColors.teacherAccent,
-                                  size: 20,
-                                ),
+                          child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+                        ),
+                        confirmDismiss: (direction) async {
+                          if (notif.recipientId != user.uid) return false;
+                          _confirmDeleteNotification(notif, user.uid);
+                          return false;
+                        },
+                        child: InkWell(
+                          onTap: () => _handleNotificationTap(notif),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: isRead
+                                  ? AppColors.surface
+                                  : AppColors.primaryEmerald
+                                      .withValues(alpha: 0.04),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isRead
+                                    ? AppColors.border
+                                    : AppColors.primaryEmerald
+                                        .withValues(alpha: 0.3),
                               ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            notif.title,
-                                            style: TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: isRead
-                                                  ? FontWeight.w600
-                                                  : FontWeight.w700,
-                                              color: AppColors.textMain,
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF3E8FF),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.notifications_none_rounded,
+                                    color: AppColors.teacherAccent,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              notif.title,
+                                              style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: isRead
+                                                    ? FontWeight.w600
+                                                    : FontWeight.w700,
+                                                color: AppColors.textMain,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        Text(
-                                          notif.createdAt != null
-                                              ? '${notif.createdAt!.day}/${notif.createdAt!.month}/${notif.createdAt!.year}'
-                                              : 'Recent',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppColors.textSecondary,
+                                          Text(
+                                            notif.createdAt != null
+                                                ? '${notif.createdAt!.day}/${notif.createdAt!.month}/${notif.createdAt!.year}'
+                                                : 'Recent',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.textSecondary,
+                                            ),
                                           ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        notif.message,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.textSecondary,
                                         ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      notif.message,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuButton<String>(
+                                  icon: const Icon(
+                                    Icons.more_vert_rounded,
+                                    size: 18,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  onSelected: (val) {
+                                    if (val == 'delete') {
+                                      _confirmDeleteNotification(notif, user.uid);
+                                    }
+                                  },
+                                  itemBuilder: (context) => [
+                                    const PopupMenuItem(
+                                      value: 'delete',
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.delete_outline_rounded,
+                                              size: 18, color: AppColors.error),
+                                          SizedBox(width: 8),
+                                          Text('Delete',
+                                              style: TextStyle(
+                                                  color: AppColors.error,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600)),
+                                        ],
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                              PopupMenuButton<String>(
-                                icon: const Icon(
-                                  Icons.more_vert_rounded,
-                                  size: 18,
-                                  color: AppColors.textSecondary,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                onSelected: (val) {
-                                  if (val == 'delete') {
-                                    _confirmDeleteNotification(notif, user.uid);
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.delete_outline_rounded,
-                                            size: 18, color: AppColors.error),
-                                        SizedBox(width: 8),
-                                        Text('Delete',
-                                            style: TextStyle(
-                                                color: AppColors.error,
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600)),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       );

@@ -243,6 +243,47 @@ class TestsViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<TeacherModel?> _resolveTeacherModel(String uid) async {
+    final userDoc = await _firestoreService.getUserDocument(uid);
+    final customTeacherId = userDoc?['teacherId'] as String? ?? '';
+    final customUserId = userDoc?['userId'] as String? ?? '';
+
+    Map<String, dynamic>? teacherData = await _firestoreService.getTeacherDocument(uid);
+    String resolvedDocId = uid;
+
+    if (teacherData == null && customTeacherId.isNotEmpty) {
+      teacherData = await _firestoreService.getTeacherDocument(customTeacherId);
+      resolvedDocId = customTeacherId;
+    }
+
+    if (teacherData == null) {
+      try {
+        final teacherDocs = await _firestoreService.getTeachersDocuments();
+        for (var doc in teacherDocs) {
+          final data = doc.data();
+          final uidVal = data['uid'] as String? ?? '';
+          final userIdVal = data['userId'] as String? ?? '';
+          final tIdVal = data['teacherId'] as String? ?? '';
+
+          if (doc.id == uid ||
+              doc.id == customTeacherId ||
+              uidVal == uid ||
+              userIdVal == customUserId ||
+              tIdVal == customTeacherId) {
+            teacherData = data;
+            resolvedDocId = doc.id;
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (teacherData != null) {
+      return TeacherModel.fromMap(teacherData, resolvedDocId);
+    }
+    return null;
+  }
+
   Future<void> fetchTestsData({String? teacherUid}) async {
     _isLoading = true;
     _errorMessage = null;
@@ -265,43 +306,7 @@ class TestsViewModel extends ChangeNotifier {
       List<String> assignedClassIds = [];
 
       if (activeTeacherUid != null && activeTeacherUid.isNotEmpty) {
-        final userDoc = await _firestoreService.getUserDocument(activeTeacherUid);
-        final customTeacherId = userDoc?['teacherId'] as String? ?? '';
-        final customUserId = userDoc?['userId'] as String? ?? '';
-
-        Map<String, dynamic>? teacherData = await _firestoreService.getTeacherDocument(activeTeacherUid);
-        String resolvedDocId = activeTeacherUid;
-
-        if (teacherData == null && customTeacherId.isNotEmpty) {
-          teacherData = await _firestoreService.getTeacherDocument(customTeacherId);
-          resolvedDocId = customTeacherId;
-        }
-
-        if (teacherData == null) {
-          try {
-            final teacherDocs = await _firestoreService.getTeachersDocuments();
-            for (var doc in teacherDocs) {
-              final data = doc.data();
-              final uidVal = data['uid'] as String? ?? '';
-              final userIdVal = data['userId'] as String? ?? '';
-              final tIdVal = data['teacherId'] as String? ?? '';
-
-              if (doc.id == activeTeacherUid ||
-                  doc.id == customTeacherId ||
-                  uidVal == activeTeacherUid ||
-                  userIdVal == customUserId ||
-                  tIdVal == customTeacherId) {
-                teacherData = data;
-                resolvedDocId = doc.id;
-                break;
-              }
-            }
-          } catch (_) {}
-        }
-
-        final teacher = teacherData != null
-            ? TeacherModel.fromMap(teacherData, resolvedDocId)
-            : null;
+        final teacher = await _resolveTeacherModel(activeTeacherUid);
         assignedClassIds = teacher?.classIds ?? [];
 
         List<ClassModel> teacherClasses = [];
@@ -458,9 +463,7 @@ class TestsViewModel extends ChangeNotifier {
       final userDoc = await _firestoreService.getUserDocument(currentUser.uid);
       final role = (userDoc?['role'] as String? ?? '').toLowerCase();
       if (role == 'teacher') {
-        final teacherId = userDoc?['teacherId'] as String? ?? currentUser.uid;
-        final teacherData = await _firestoreService.getTeacherDocument(teacherId);
-        final teacher = teacherData != null ? TeacherModel.fromMap(teacherData, teacherId) : null;
+        final teacher = await _resolveTeacherModel(currentUser.uid);
 
         if (teacher == null || !teacher.classIds.contains(classId) || !teacher.teachesSubject(cleanSubject)) {
           _errorMessage = 'Unauthorized: You are not assigned to teach $cleanSubject for this class.';
@@ -599,9 +602,7 @@ class TestsViewModel extends ChangeNotifier {
       final userDoc = await _firestoreService.getUserDocument(currentUser.uid);
       final role = (userDoc?['role'] as String? ?? '').toLowerCase();
       if (role == 'teacher') {
-        final teacherId = userDoc?['teacherId'] as String? ?? currentUser.uid;
-        final teacherData = await _firestoreService.getTeacherDocument(teacherId);
-        final teacher = teacherData != null ? TeacherModel.fromMap(teacherData, teacherId) : null;
+        final teacher = await _resolveTeacherModel(currentUser.uid);
 
         if (teacher == null || !teacher.classIds.contains(classId) || !teacher.teachesSubject(cleanSubject)) {
           _errorMessage = 'Unauthorized: You are not assigned to teach $cleanSubject for this class.';
@@ -612,7 +613,7 @@ class TestsViewModel extends ChangeNotifier {
     }
 
     // Check if totalMarks is reduced below any already-entered student marks
-    final existingMarks = await _testRepository.getMarksForTest(testId);
+    final existingMarks = await _testRepository.getMarksForTest(testId, classId: classId);
     for (var m in existingMarks) {
       if (!m.isAbsent && m.marks != null && m.marks! > totalMarks) {
         _errorMessage =
@@ -647,6 +648,50 @@ class TestsViewModel extends ChangeNotifier {
       );
 
       await _testRepository.updateTest(updated);
+
+      // Phase 2: Route test-updated notifications by class AND subject
+      String currentUserName = 'Admin';
+      String currentUserRole = 'admin';
+      if (currentUser != null) {
+        final userDoc = await _firestoreService.getUserDocument(currentUser.uid);
+        currentUserRole = (userDoc?['role'] as String? ?? 'admin').toLowerCase();
+        currentUserName = userDoc?['name'] as String? ?? currentUser.displayName ?? (currentUserRole == 'admin' ? 'Admin' : 'Teacher');
+      }
+
+      if (currentUserRole == 'admin') {
+        final teachers = await _teacherRepository.getTeachers();
+        final assignedTeachers = teachers.where((t) => t.classIds.contains(classId) && t.teachesSubject(cleanSubject)).toList();
+        for (var t in assignedTeachers) {
+          final notifId = 'notif_${DateTime.now().millisecondsSinceEpoch}_${t.teacherId}';
+          final notification = NotificationModel(
+            notificationId: notifId,
+            recipientId: t.teacherId,
+            recipientRole: 'teacher',
+            type: 'test_updated',
+            title: 'Test Updated by Admin',
+            message: 'Admin $currentUserName updated $cleanSubject test "$cleanName".',
+            referenceId: testId,
+            referenceType: 'test',
+            isRead: false,
+          );
+          await _notificationRepository.createNotification(notification);
+        }
+      } else {
+        final notifId = 'notif_${DateTime.now().millisecondsSinceEpoch}';
+        final notification = NotificationModel(
+          notificationId: notifId,
+          recipientId: 'admin',
+          recipientRole: 'admin',
+          type: 'test_updated',
+          title: 'Test Updated by Teacher',
+          message: 'Teacher $currentUserName updated $cleanSubject test "$cleanName".',
+          referenceId: testId,
+          referenceType: 'test',
+          isRead: false,
+        );
+        await _notificationRepository.createNotification(notification);
+      }
+
       _successMessage = 'Test updated successfully.';
       _isSaving = false;
       await fetchTestsData();
@@ -660,6 +705,27 @@ class TestsViewModel extends ChangeNotifier {
   }
 
   Future<bool> cancelTest(String testId) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      final userDoc = await _firestoreService.getUserDocument(currentUser.uid);
+      final role = (userDoc?['role'] as String? ?? '').toLowerCase();
+      if (role == 'teacher') {
+        final existingTest = await _testRepository.getTest(testId);
+        if (existingTest == null) {
+          _errorMessage = 'Test not found.';
+          notifyListeners();
+          return false;
+        }
+        final teacher = await _resolveTeacherModel(currentUser.uid);
+
+        if (teacher == null || !teacher.classIds.contains(existingTest.classId) || !teacher.teachesSubject(existingTest.subject)) {
+          _errorMessage = 'Unauthorized: You are not assigned to teach ${existingTest.subject} for this class.';
+          notifyListeners();
+          return false;
+        }
+      }
+    }
+
     _isSaving = true;
     _errorMessage = null;
     _successMessage = null;
@@ -679,20 +745,117 @@ class TestsViewModel extends ChangeNotifier {
     }
   }
 
-  Future<bool> deleteTest(String testId) async {
+  Future<bool> deleteTest(String testId, {String deletionReason = ''}) async {
+    if (_isSaving) return false;
+
+    final cleanReason = deletionReason.trim();
+    debugPrint('[TestsViewModel.deleteTest] START: testId=$testId, reason=$cleanReason');
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    String currentUserName = 'User';
+    String currentUserRole = 'admin';
+    bool isTeacher = false;
+
+    if (currentUser != null) {
+      try {
+        final userDoc = await _firestoreService.getUserDocument(currentUser.uid);
+        currentUserRole = (userDoc?['role'] as String? ?? 'admin').toLowerCase();
+        currentUserName = userDoc?['name'] as String? ?? currentUser.displayName ?? 'User';
+        isTeacher = currentUserRole == 'teacher';
+        debugPrint('[TestsViewModel.deleteTest] User resolved: uid=${currentUser.uid}, role=$currentUserRole, name=$currentUserName');
+      } catch (e) {
+        debugPrint('[TestsViewModel.deleteTest] ERROR fetching user doc: $e');
+      }
+    }
+
+    TestModel? test;
+    try {
+      test = await _testRepository.getTest(testId);
+      debugPrint('[TestsViewModel.deleteTest] Fetched test: ${test?.testName}, classId=${test?.classId}, subject=${test?.subject}');
+    } catch (e) {
+      debugPrint('[TestsViewModel.deleteTest] ERROR fetching test $testId: $e');
+    }
+
+    if (test == null) {
+      debugPrint('[TestsViewModel.deleteTest] FAILED: Test not found for testId=$testId');
+      _errorMessage = 'Test not found.';
+      notifyListeners();
+      return false;
+    }
+
+    if (isTeacher) {
+      if (cleanReason.isEmpty) {
+        debugPrint('[TestsViewModel.deleteTest] FAILED: Deletion reason is empty for teacher');
+        _errorMessage = 'Deletion reason is required.';
+        notifyListeners();
+        return false;
+      }
+      try {
+        final teacher = await _resolveTeacherModel(currentUser!.uid);
+
+        debugPrint('[TestsViewModel.deleteTest] Teacher assignment check: teacherId=${teacher?.teacherId}, classIds=${teacher?.classIds}, subjects=${teacher?.subjects}');
+
+        if (teacher == null || !teacher.classIds.contains(test.classId) || !teacher.teachesSubject(test.subject)) {
+          debugPrint('[TestsViewModel.deleteTest] FAILED: Teacher unauthorized for classId=${test.classId}, subject=${test.subject}');
+          _errorMessage = 'Unauthorized: You are not assigned to teach ${test.subject} for this class.';
+          notifyListeners();
+          return false;
+        }
+      } catch (e) {
+        debugPrint('[TestsViewModel.deleteTest] ERROR during teacher authorization check: $e');
+        _errorMessage = 'Authorization check failed: ${e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '')}';
+        notifyListeners();
+        return false;
+      }
+    }
+
     _isSaving = true;
     _errorMessage = null;
     _successMessage = null;
     notifyListeners();
 
     try {
-      await _testRepository.deleteTest(testId);
+      final testName = test.testName;
+      final subject = test.subject;
+      final classId = test.classId;
+
+      NotificationModel? adminNotification;
+      if (isTeacher && currentUser != null) {
+        final notifId = 'notif_${DateTime.now().millisecondsSinceEpoch}';
+        adminNotification = NotificationModel(
+          notificationId: notifId,
+          recipientId: 'admin',
+          recipientRole: 'admin',
+          type: 'test_deleted',
+          title: 'Test Deleted by Teacher',
+          message: 'Teacher $currentUserName deleted $subject test "$testName" (Class ID: $classId). Reason: $cleanReason',
+          referenceId: testId,
+          referenceType: 'test',
+          metadata: {
+            'classId': classId,
+            'subject': subject,
+          },
+          isRead: false,
+        );
+      }
+
+      debugPrint('[TestsViewModel.deleteTest] Executing repository deleteTest for testId=$testId with atomic notification');
+      await _testRepository.deleteTest(testId, adminNotification: adminNotification);
+      debugPrint('[TestsViewModel.deleteTest] Successfully deleted testId=$testId from Firestore repository');
+
       _successMessage = 'Test deleted successfully.';
       _isSaving = false;
       await fetchTestsData();
+      debugPrint('[TestsViewModel.deleteTest] SUCCESS complete for testId=$testId');
       return true;
     } catch (e) {
-      _errorMessage = 'Unable to delete test. Please try again.';
+      debugPrint('[TestsViewModel.deleteTest] EXCEPTION during deletion of testId=$testId: $e');
+      String msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      if (msg.contains('permission-denied') || msg.toLowerCase().contains('permission')) {
+        _errorMessage = 'Permission denied. You do not have permission to delete this test.';
+      } else {
+        _errorMessage = 'Unable to delete test: $msg';
+      }
       _isSaving = false;
       notifyListeners();
       return false;
@@ -716,6 +879,39 @@ class TestsViewModel extends ChangeNotifier {
       _errorMessage = 'Marks entry available on ${test.testDate}.';
       notifyListeners();
       return false;
+    }
+
+    // Enforce Teacher class and subject authorization
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      final userDoc = await _firestoreService.getUserDocument(currentUser.uid);
+      final role = (userDoc?['role'] as String? ?? '').toLowerCase();
+      if (role == 'teacher') {
+        final teacher = await _resolveTeacherModel(currentUser.uid);
+
+        if (teacher == null || !teacher.classIds.contains(test.classId) || !teacher.teachesSubject(test.subject)) {
+          _errorMessage = 'Unauthorized: You are not assigned to teach ${test.subject} for this class.';
+          notifyListeners();
+          return false;
+        }
+      }
+    }
+
+    // Validate student class membership
+    try {
+      final classStudentDocs = await _firestoreService.getStudentsDocumentsByClassId(test.classId);
+      if (classStudentDocs.isNotEmpty) {
+        final classStudentIds = classStudentDocs.map((doc) => doc.id).toSet();
+        for (var studentId in marksInputMap.keys) {
+          if (!classStudentIds.contains(studentId)) {
+            _errorMessage = 'Student ($studentId) is not enrolled in this class.';
+            notifyListeners();
+            return false;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[TestsViewModel.saveStudentMarks] Class membership validation check note: $e');
     }
 
     // Validate marks inputs
@@ -826,38 +1022,42 @@ class TestsViewModel extends ChangeNotifier {
         await _testRepository.saveMarksBatchWithAudit(batch, auditBatch);
 
         // Targeted In-App Notifications for Marks Entry / Editing
-        if (currentUserRole.toLowerCase() == 'admin') {
-          final teachers = await _teacherRepository.getTeachers();
-          final assignedTeachers = teachers.where((t) => t.classIds.contains(test.classId) && t.teachesSubject(test.subject)).toList();
-          for (var t in assignedTeachers) {
-            final notifId = 'notif_${DateTime.now().millisecondsSinceEpoch}_${t.teacherId}';
+        try {
+          if (currentUserRole.toLowerCase() == 'admin') {
+            final teachers = await _teacherRepository.getTeachers();
+            final assignedTeachers = teachers.where((t) => t.classIds.contains(test.classId) && t.teachesSubject(test.subject)).toList();
+            for (var t in assignedTeachers) {
+              final notifId = 'notif_${DateTime.now().millisecondsSinceEpoch}_${t.teacherId}';
+              final notification = NotificationModel(
+                notificationId: notifId,
+                recipientId: t.teacherId, // Auth UID e.g. X9z...
+                recipientRole: 'teacher',
+                type: 'marks_updated',
+                title: 'Marks Updated by Admin',
+                message: 'Admin $currentUserName saved/updated marks for ${auditBatch.length} student(s) in ${test.subject} test "${test.testName}".',
+                referenceId: test.testId,
+                referenceType: 'test',
+                isRead: false,
+              );
+              await _notificationRepository.createNotification(notification);
+            }
+          } else {
+            final notifId = 'notif_${DateTime.now().millisecondsSinceEpoch}';
             final notification = NotificationModel(
               notificationId: notifId,
-              recipientId: t.teacherId, // Auth UID e.g. X9z...
-              recipientRole: 'teacher',
+              recipientId: 'admin',
+              recipientRole: 'admin',
               type: 'marks_updated',
-              title: 'Marks Updated by Admin',
-              message: 'Admin $currentUserName saved/updated marks for ${auditBatch.length} student(s) in ${test.subject} test "${test.testName}".',
+              title: 'Marks Saved by Teacher',
+              message: 'Teacher $currentUserName saved/updated marks for ${auditBatch.length} student(s) in ${test.subject} test "${test.testName}".',
               referenceId: test.testId,
               referenceType: 'test',
               isRead: false,
             );
             await _notificationRepository.createNotification(notification);
           }
-        } else {
-          final notifId = 'notif_${DateTime.now().millisecondsSinceEpoch}';
-          final notification = NotificationModel(
-            notificationId: notifId,
-            recipientId: 'admin',
-            recipientRole: 'admin',
-            type: 'marks_updated',
-            title: 'Marks Saved by Teacher',
-            message: 'Teacher $currentUserName saved/updated marks for ${auditBatch.length} student(s) in ${test.subject} test "${test.testName}".',
-            referenceId: test.testId,
-            referenceType: 'test',
-            isRead: false,
-          );
-          await _notificationRepository.createNotification(notification);
+        } catch (notifErr) {
+          debugPrint('[TestsViewModel.saveStudentMarks] Notification warning: $notifErr');
         }
       }
 
@@ -870,7 +1070,12 @@ class TestsViewModel extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('[TestsViewModel.saveStudentMarks] Failed to save marks: $e');
-      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      String msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      if (msg.contains('permission-denied') || msg.toLowerCase().contains('permission')) {
+        _errorMessage = 'Permission denied. You do not have permission to save marks for this class.';
+      } else {
+        _errorMessage = 'Unable to save marks: $msg';
+      }
       _isSaving = false;
       notifyListeners();
       return false;
