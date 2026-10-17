@@ -392,6 +392,7 @@ service cloud.firestore {
           && isTeacherAuthorizedForTestRef(request.resource.data.referenceId)
         )
       );
+
       allow update: if request.auth != null && (
         isActiveAdmin()
         || (

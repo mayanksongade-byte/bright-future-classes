@@ -57,6 +57,57 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
     }
   }
 
+  Future<void> _confirmToggleArchive() async {
+    final willArchive = !_item.test.isArchived;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(willArchive ? 'Archive Test?' : 'Restore Test?'),
+          content: Text(willArchive
+              ? 'Are you sure you want to archive this test? It will be moved to the Archived list while preserving all student marks and audit history.'
+              : 'Are you sure you want to restore this test?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: willArchive ? AppColors.warning : AppColors.primaryEmerald,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(willArchive ? 'Archive' : 'Restore'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && mounted) {
+      final success = await _viewModel.archiveTest(_item.test.testId, willArchive);
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(willArchive ? 'Test archived successfully.' : 'Test restored successfully.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        await _refresh();
+      } else if (_viewModel.errorMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_viewModel.errorMessage!),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   bool _isDeleting = false;
 
   Future<void> _confirmDelete() async {
@@ -310,6 +361,14 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              _item.test.isArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+              color: AppColors.textMain,
+            ),
+            onPressed: _confirmToggleArchive,
+            tooltip: _item.test.isArchived ? 'Restore Test' : 'Archive Test',
+          ),
           IconButton(
             icon: const Icon(Icons.edit_outlined,
                 color: AppColors.primaryEmerald),

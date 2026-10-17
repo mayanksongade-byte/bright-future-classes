@@ -41,6 +41,20 @@ class TestRepository {
     }
   }
 
+  Future<void> updateTestArchiveStatus(String testId, bool isArchived, String? userId) async {
+    try {
+      await _firestoreService.updateTestArchiveStatus(testId, isArchived, userId);
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw Exception('Permission denied. You do not have permission to archive/restore this test.');
+      }
+      throw Exception('Database error (${e.code}): ${e.message}');
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Failed to update archive status.');
+    }
+  }
+
   Future<void> cancelTest(String testId) async {
     try {
       await _firestoreService.cancelTestDocument(testId);
@@ -151,6 +165,15 @@ class TestRepository {
       final docs = await _firestoreService.getMarkAuditDocumentsForTest(testId, classId: classId);
       return docs.map((doc) => MarkAuditModel.fromMap(doc.data(), doc.id)).toList();
     } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<MarkModel>> getMarksForStudent(String studentId, {String? classId}) async {
+    try {
+      final docs = await _firestoreService.getMarkDocumentsForStudent(studentId, classId: classId);
+      return docs.map((doc) => MarkModel.fromMap(doc.data(), doc.id)).toList();
+    } catch (e) {
       return [];
     }
   }

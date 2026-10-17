@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../data/models/attendance_model.dart';
 import '../../../data/models/class_model.dart';
@@ -20,7 +21,10 @@ import '../../../data/repositories/teacher_repository.dart';
 import '../../../data/repositories/test_repository.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/firestore_service.dart';
+import '../../../data/models/student_academic_result.dart';
 import '../../attendance/screens/student_attendance_screen.dart';
+import '../../reports/screens/student_academic_report_screen.dart';
+import 'academic_results_screen.dart';
 import 'add_student_screen.dart';
 
 class StudentDetailsScreen extends StatefulWidget {
@@ -46,8 +50,10 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
 
   bool _isLoading = true;
   bool _isAdmin = true;
+  bool _isTeacher = false;
   ClassModel? _assignedClass;
   TeacherModel? _assignedTeacher;
+  TeacherModel? _loggedInTeacher;
 
   int _attendancePresent = 0;
   int _attendanceAbsent = 0;
@@ -57,10 +63,8 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
   double _paidFees = 0.0;
   double _pendingFees = 0.0;
 
-  int _testsTaken = 0;
-  double _averageMarksPercentage = 0.0;
-  Map<String, dynamic>? _latestResult;
-  List<Map<String, dynamic>> _allStudentResults = [];
+  List<StudentAcademicResult> _academicResults = [];
+  StudentAcademicSummary? _academicSummary;
 
   List<NoticeModel> _applicableNotices = [];
   List<ComplaintModel> _studentComplaints = [];
@@ -79,9 +83,23 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
         final userDoc = await FirestoreService().getUserDocument(currentUser.uid);
         final role = (userDoc?['role'] as String? ?? '').toLowerCase();
         final isActive = userDoc?['isActive'] as bool? ?? false;
+        final isTeacherRole = (role == 'teacher') && isActive;
+        final isAdminRole = (role == 'admin') && isActive;
+
+        TeacherModel? teacher;
+        if (isTeacherRole) {
+          final teacherId = userDoc?['teacherId'] as String? ?? currentUser.uid;
+          final teacherData = await FirestoreService().getTeacherDocument(teacherId);
+          if (teacherData != null) {
+            teacher = TeacherModel.fromMap(teacherData, teacherId);
+          }
+        }
+
         if (mounted) {
           setState(() {
-            _isAdmin = role == 'admin' && isActive;
+            _isAdmin = isAdminRole;
+            _isTeacher = isTeacherRole;
+            _loggedInTeacher = teacher;
           });
         }
       }
@@ -201,62 +219,55 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
       // 5. Resolve Tests & Marks
       try {
         List<TestModel> tests = [];
-        if (_isAdmin) {
-          tests = await _testRepository.getAllTests();
-        } else if (_student.classId != null && _student.classId!.isNotEmpty) {
-          tests = await _testRepository.getTestsForClass(_student.classId!);
+        if (_student.classId != null && _student.classId!.isNotEmpty) {
+          if (_isTeacher && _loggedInTeacher != null) {
+            if (_loggedInTeacher!.classIds.contains(_student.classId)) {
+              tests = await _testRepository.getTestsForClass(_student.classId!);
+            } else {
+              tests = [];
+            }
+          } else {
+            tests = await _testRepository.getTestsForClass(_student.classId!);
+          }
         }
 
-        final List<Map<String, dynamic>> results = [];
-        double totalScorePerc = 0.0;
-        int scoredCount = 0;
+        if (tests.isEmpty && _isAdmin) {
+          tests = await _testRepository.getAllTests();
+        }
 
+        // If logged-in user is a teacher, filter tests to authorized subjects only
+        if (_isTeacher && _loggedInTeacher != null) {
+          tests = tests.where((t) => _loggedInTeacher!.teachesSubject(t.subject)).toList();
+        }
+
+        final studentMarks = await _testRepository.getMarksForStudent(_student.studentId);
+        final Map<String, MarkModel> markByTestId = {};
+        for (var m in studentMarks) {
+          markByTestId[m.testId] = m;
+        }
+
+        final List<StudentAcademicResult> parsedResults = [];
         for (var test in tests) {
           if (_student.classId != null &&
               _student.classId!.isNotEmpty &&
               test.classId != _student.classId) {
             continue;
           }
-          final marks = await _testRepository.getMarksForTest(test.testId);
-          final studentMark = marks.firstWhere(
-            (m) => m.studentId == _student.studentId,
-            orElse: () => MarkModel(
-              markId: '',
-              testId: test.testId,
-              studentId: _student.studentId,
-              classId: test.classId,
-            ),
-          );
-
-          if (studentMark.markId.isNotEmpty) {
-            final double? markVal = studentMark.isAbsent ? 0.0 : studentMark.marks;
-            final double maxMarks = test.totalMarks > 0 ? test.totalMarks : 100.0;
-            final double perc =
-                markVal != null ? (markVal / maxMarks) * 100.0 : 0.0;
-
-            if (markVal != null) {
-              totalScorePerc += perc;
-              scoredCount++;
-            }
-
-            results.add({
-              'testName': test.testName,
-              'subject': test.subject,
-              'testDate': test.testDate,
-              'marksObtained': studentMark.isAbsent ? 'Absent' : (markVal?.toStringAsFixed(1) ?? 'N/A'),
-              'totalMarks': maxMarks.toStringAsFixed(0),
-              'isAbsent': studentMark.isAbsent,
-              'percentage': perc,
-            });
-          }
+          final m = markByTestId[test.testId];
+          parsedResults.add(StudentAcademicResult(
+            test: test,
+            mark: m,
+            classModel: _assignedClass,
+          ));
         }
 
-        _testsTaken = results.length;
-        _allStudentResults = results;
-        _averageMarksPercentage =
-            scoredCount > 0 ? totalScorePerc / scoredCount : 0.0;
-        _latestResult = results.isNotEmpty ? results.first : null;
-      } catch (_) {}
+        parsedResults.sort((a, b) => b.test.testDate.compareTo(a.test.testDate));
+
+        _academicResults = parsedResults;
+        _academicSummary = StudentAcademicSummary(allResults: parsedResults);
+      } catch (e) {
+        debugPrint('[StudentDetailsScreen] Error resolving tests & marks: $e');
+      }
 
       // 6. Resolve Notices (Admin Only)
       if (_isAdmin) {
@@ -318,124 +329,15 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
     }
   }
 
-  void _showAllResultsBottomSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  void _navigateToAcademicResults() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => AcademicResultsScreen(
+          student: _student,
+          classModel: _assignedClass,
+          initialResults: _academicResults,
+        ),
       ),
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          maxChildSize: 0.9,
-          minChildSize: 0.4,
-          expand: false,
-          builder: (context, scrollController) {
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.border,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Academic Results (${_allStudentResults.length})',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textMain,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: _allStudentResults.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No test results recorded yet.',
-                              style: AppTextStyles.subtitle,
-                            ),
-                          )
-                        : ListView.separated(
-                            controller: scrollController,
-                            itemCount: _allStudentResults.length,
-                            separatorBuilder: (context, index) =>
-                                const Divider(height: 1, color: AppColors.border),
-                            itemBuilder: (context, index) {
-                              final res = _allStudentResults[index];
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            res['testName'] as String,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.textMain,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Subject: ${res['subject']} • Date: ${res['testDate']}',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.textSecondary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: (res['isAbsent'] as bool)
-                                            ? AppColors.error.withValues(alpha: 0.1)
-                                            : AppColors.lightEmerald,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        '${res['marksObtained']} / ${res['totalMarks']}',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: (res['isAbsent'] as bool)
-                                              ? AppColors.error
-                                              : AppColors.darkEmerald,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -502,7 +404,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                             _buildInfoRow('Full Name', _student.name),
                             _buildInfoRow('Student ID', _student.studentId),
                             _buildInfoRow('Date of Birth',
-                                _student.dateOfBirth.isNotEmpty ? _student.dateOfBirth : '-'),
+                                _student.dateOfBirth.isNotEmpty ? AppDateFormatter.formatDate(_student.dateOfBirth) : '-'),
                             _buildInfoRow('Gender', _student.gender),
                             _buildInfoRow('Status', isActive ? 'Active' : 'Inactive'),
                           ],
@@ -662,11 +564,11 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                           title: 'Tests & Marks',
                           icon: Icons.assignment_outlined,
                           children: [
-                            if (_allStudentResults.isEmpty)
+                            if (_academicSummary == null || _academicSummary!.totalTests == 0)
                               const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 8),
                                 child: Text(
-                                  'No tests recorded yet.',
+                                  'No tests recorded for this class yet.',
                                   style: AppTextStyles.subtitle,
                                 ),
                               )
@@ -675,82 +577,134 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                 children: [
                                   Expanded(
                                     child: _buildMetricBox(
-                                      label: 'Tests Taken',
-                                      value: '$_testsTaken',
+                                      label: 'Completed Tests',
+                                      value: '${_academicSummary!.completedCount} / ${_academicSummary!.totalTests}',
                                       color: AppColors.textMain,
                                     ),
                                   ),
-                                  const SizedBox(width: 10),
+                                  const SizedBox(width: 8),
                                   Expanded(
                                     child: _buildMetricBox(
-                                      label: 'Average Score',
-                                      value: '${_averageMarksPercentage.toStringAsFixed(1)}%',
+                                      label: 'Overall Average',
+                                      value: '${_academicSummary!.overallAveragePercentage.toStringAsFixed(1)}%',
                                       color: AppColors.primaryEmerald,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _buildMetricBox(
+                                      label: 'Pass / Fail',
+                                      value: '${_academicSummary!.passCount} P · ${_academicSummary!.failCount} F',
+                                      color: _academicSummary!.failCount == 0 ? AppColors.success : AppColors.warning,
                                     ),
                                   ),
                                 ],
                               ),
-                              if (_latestResult != null) ...[
-                                const SizedBox(height: 12),
-                                Container(
+                              const SizedBox(height: 12),
+
+                              const Text(
+                                'Subject Performance Summary',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textMain,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ..._academicSummary!.subjectSummaries.map((sub) {
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: AppColors.background,
-                                    borderRadius: BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(12),
                                     border: Border.all(color: AppColors.border),
                                   ),
                                   child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Text(
-                                            'Latest Result',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.textSecondary,
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              sub.subjectName,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.textMain,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '${_latestResult!['testName']} (${_latestResult!['subject']})',
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w700,
-                                              color: AppColors.textMain,
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '${sub.completedCount}/${sub.totalTests} Evaluated • ${sub.passCount} Pass · ${sub.failCount} Fail · ${sub.pendingCount} Pending',
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: AppColors.textSecondary,
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
+                                      const SizedBox(width: 8),
                                       Text(
-                                        '${_latestResult!['marksObtained']} / ${_latestResult!['totalMarks']}',
+                                        '${sub.subjectAveragePercentage.toStringAsFixed(1)}%',
                                         style: const TextStyle(
                                           fontSize: 14,
-                                          fontWeight: FontWeight.w700,
+                                          fontWeight: FontWeight.w800,
                                           color: AppColors.primaryEmerald,
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ],
+                                );
+                              }),
+
                               const SizedBox(height: 14),
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: _showAllResultsBottomSheet,
-                                  icon: const Icon(Icons.analytics_outlined, size: 18),
-                                  label: const Text('View All Results'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppColors.primaryEmerald,
-                                    side: const BorderSide(color: AppColors.primaryEmerald),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
+
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: _navigateToAcademicResults,
+                                      icon: const Icon(Icons.analytics_outlined, size: 16),
+                                      label: const Text('View All Results', style: TextStyle(fontSize: 12)),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppColors.primaryEmerald,
+                                        side: const BorderSide(color: AppColors.primaryEmerald),
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (context) => StudentAcademicReportScreen(
+                                              student: _student,
+                                              classModel: _assignedClass,
+                                              results: _academicResults,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                                      label: const Text('Academic Report', style: TextStyle(fontSize: 12)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.primaryEmerald,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ],

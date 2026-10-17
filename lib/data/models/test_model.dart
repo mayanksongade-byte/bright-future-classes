@@ -13,6 +13,9 @@ class TestModel {
   final String? createdByName;
   final String? createdByRole;
   final bool isCancelled;
+  final bool isArchived;
+  final DateTime? archivedAt;
+  final String? archivedBy;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -29,6 +32,9 @@ class TestModel {
     this.createdByName,
     this.createdByRole,
     this.isCancelled = false,
+    this.isArchived = false,
+    this.archivedAt,
+    this.archivedBy,
     this.createdAt,
     this.updatedAt,
   });
@@ -50,6 +56,14 @@ class TestModel {
       parsedUpdatedAt = DateTime.tryParse(rawUpdatedAt);
     }
 
+    DateTime? parsedArchivedAt;
+    final rawArchivedAt = map['archivedAt'];
+    if (rawArchivedAt is Timestamp) {
+      parsedArchivedAt = rawArchivedAt.toDate();
+    } else if (rawArchivedAt is String) {
+      parsedArchivedAt = DateTime.tryParse(rawArchivedAt);
+    }
+
     return TestModel(
       testId: docId ?? map['testId'] as String? ?? '',
       testName: map['testName'] as String? ?? '',
@@ -63,6 +77,9 @@ class TestModel {
       createdByName: map['createdByName'] as String?,
       createdByRole: map['createdByRole'] as String?,
       isCancelled: map['isCancelled'] as bool? ?? false,
+      isArchived: map['isArchived'] as bool? ?? false,
+      archivedAt: parsedArchivedAt,
+      archivedBy: map['archivedBy'] as String?,
       createdAt: parsedCreatedAt,
       updatedAt: parsedUpdatedAt,
     );
@@ -82,6 +99,9 @@ class TestModel {
       'createdByName': createdByName,
       'createdByRole': createdByRole,
       'isCancelled': isCancelled,
+      'isArchived': isArchived,
+      'archivedAt': archivedAt != null ? Timestamp.fromDate(archivedAt!) : null,
+      'archivedBy': archivedBy,
       'createdAt': createdAt != null
           ? Timestamp.fromDate(createdAt!)
           : FieldValue.serverTimestamp(),
@@ -102,6 +122,9 @@ class TestModel {
     String? createdByName,
     String? createdByRole,
     bool? isCancelled,
+    bool? isArchived,
+    DateTime? archivedAt,
+    String? archivedBy,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -118,6 +141,9 @@ class TestModel {
       createdByName: createdByName ?? this.createdByName,
       createdByRole: createdByRole ?? this.createdByRole,
       isCancelled: isCancelled ?? this.isCancelled,
+      isArchived: isArchived ?? this.isArchived,
+      archivedAt: archivedAt ?? this.archivedAt,
+      archivedBy: archivedBy ?? this.archivedBy,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

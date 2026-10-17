@@ -412,6 +412,15 @@ class FirestoreService {
     await _firestore.collection('tests').doc(testId).delete();
   }
 
+  Future<void> updateTestArchiveStatus(String testId, bool isArchived, String? userId) async {
+    await _firestore.collection('tests').doc(testId).update({
+      'isArchived': isArchived,
+      'archivedAt': isArchived ? FieldValue.serverTimestamp() : null,
+      'archivedBy': isArchived ? userId : null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> deleteTestWithNotification(
       String testId, Map<String, dynamic> notificationData, String notificationId) async {
     final batch = _firestore.batch();
@@ -517,6 +526,18 @@ class FirestoreService {
     }
     if (targetClassId != null && targetClassId.isNotEmpty) {
       query = query.where('classId', isEqualTo: targetClassId);
+    }
+    final snapshot = await query.get();
+    return snapshot.docs;
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getMarkDocumentsForStudent(
+      String studentId, {String? classId}) async {
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('marks')
+        .where('studentId', isEqualTo: studentId);
+    if (classId != null && classId.isNotEmpty) {
+      query = query.where('classId', isEqualTo: classId);
     }
     final snapshot = await query.get();
     return snapshot.docs;

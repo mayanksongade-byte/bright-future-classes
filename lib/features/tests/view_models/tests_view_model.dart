@@ -32,15 +32,43 @@ class TestItem {
   int get totalStudents => studentsInClass.length;
 
   int get marksEnteredCount {
-    return marks.where((m) => m.marks != null || m.isAbsent).length;
+    final Set<String> accountedStudentIds = {};
+    for (var m in marks) {
+      if ((m.marks != null || m.isAbsent) && m.studentId.isNotEmpty) {
+        accountedStudentIds.add(m.studentId);
+      }
+    }
+    return accountedStudentIds.length;
   }
 
   String get status {
     if (test.isCancelled) return 'Cancelled';
     if (totalStudents == 0) return 'Marks Not Entered';
-    if (marksEnteredCount == 0) return 'Marks Not Entered';
-    if (marksEnteredCount < totalStudents) return 'Partially Entered';
-    return 'Completed';
+
+    final Set<String> expectedStudentIds = studentsInClass.map((s) => s.studentId).toSet();
+    if (expectedStudentIds.isEmpty) return 'Marks Not Entered';
+
+    final Set<String> accountedStudentIds = {};
+    for (var m in marks) {
+      if ((m.marks != null || m.isAbsent) && m.studentId.isNotEmpty) {
+        accountedStudentIds.add(m.studentId);
+      }
+    }
+
+    if (accountedStudentIds.isEmpty) return 'Marks Not Entered';
+
+    bool allAccounted = true;
+    for (var id in expectedStudentIds) {
+      if (!accountedStudentIds.contains(id)) {
+        allAccounted = false;
+        break;
+      }
+    }
+
+    if (allAccounted && accountedStudentIds.length >= expectedStudentIds.length) {
+      return 'Completed';
+    }
+    return 'Partially Entered';
   }
 
   String get creatorAttribution {
@@ -168,9 +196,24 @@ class TestsViewModel extends ChangeNotifier {
         _notificationRepository = notificationRepository ?? NotificationRepository(),
         _firestoreService = firestoreService ?? FirestoreService();
 
+  String _selectedCategory = 'Active'; // Active, Completed, Archived
+  String get selectedCategory => _selectedCategory;
+
+  void setCategory(String category) {
+    _selectedCategory = category;
+    notifyListeners();
+  }
+
   List<TestItem> _testItems = [];
   List<TestItem> get testItems {
     var list = _testItems;
+    if (_selectedCategory == 'Active') {
+      list = list.where((item) => !item.test.isArchived && item.status != 'Completed').toList();
+    } else if (_selectedCategory == 'Completed') {
+      list = list.where((item) => !item.test.isArchived && item.status == 'Completed').toList();
+    } else if (_selectedCategory == 'Archived') {
+      list = list.where((item) => item.test.isArchived).toList();
+    }
     if (_classFilter != null && _classFilter!.isNotEmpty) {
       list = list.where((item) => item.test.classId == _classFilter).toList();
     }
@@ -745,6 +788,47 @@ class TestsViewModel extends ChangeNotifier {
     }
   }
 
+  Future<bool> archiveTest(String testId, bool archive) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      final userDoc = await _firestoreService.getUserDocument(currentUser.uid);
+      final role = (userDoc?['role'] as String? ?? '').toLowerCase();
+      if (role == 'teacher') {
+        final existingTest = await _testRepository.getTest(testId);
+        if (existingTest == null) {
+          _errorMessage = 'Test not found.';
+          notifyListeners();
+          return false;
+        }
+        final teacher = await _resolveTeacherModel(currentUser.uid);
+
+        if (teacher == null || !teacher.classIds.contains(existingTest.classId) || !teacher.teachesSubject(existingTest.subject)) {
+          _errorMessage = 'Unauthorized: You are not assigned to teach ${existingTest.subject} for this class.';
+          notifyListeners();
+          return false;
+        }
+      }
+    }
+
+    _isSaving = true;
+    _errorMessage = null;
+    _successMessage = null;
+    notifyListeners();
+
+    try {
+      await _testRepository.updateTestArchiveStatus(testId, archive, currentUser?.uid);
+      _successMessage = archive ? 'Test archived successfully.' : 'Test restored successfully.';
+      _isSaving = false;
+      await fetchTestsData();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Unable to update archive status: $e';
+      _isSaving = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> deleteTest(String testId, {String deletionReason = ''}) async {
     if (_isSaving) return false;
 
@@ -779,6 +863,14 @@ class TestsViewModel extends ChangeNotifier {
     if (test == null) {
       debugPrint('[TestsViewModel.deleteTest] FAILED: Test not found for testId=$testId');
       _errorMessage = 'Test not found.';
+      notifyListeners();
+      return false;
+    }
+
+    final existingMarks = await _testRepository.getMarksForTest(testId);
+    final hasMarks = existingMarks.any((m) => m.marks != null || m.isAbsent);
+    if (hasMarks) {
+      _errorMessage = 'Cannot permanently delete a test that contains student marks. Please archive the test instead.';
       notifyListeners();
       return false;
     }

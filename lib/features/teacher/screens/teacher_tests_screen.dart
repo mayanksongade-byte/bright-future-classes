@@ -221,6 +221,30 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // Category Tabs: Active, Completed, Archived
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _buildCategoryTab('Active', _viewModel.selectedCategory == 'Active'),
+                                ),
+                                Expanded(
+                                  child: _buildCategoryTab('Completed', _viewModel.selectedCategory == 'Completed'),
+                                ),
+                                Expanded(
+                                  child: _buildCategoryTab('Archived', _viewModel.selectedCategory == 'Archived'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
                           // Filters Card
                           Container(
                             padding: const EdgeInsets.all(16),
@@ -834,6 +858,28 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryTab(String title, bool isSelected) {
+    return GestureDetector(
+      onTap: () => _viewModel.setCategory(title),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primaryEmerald : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
       ),
     );
   }
