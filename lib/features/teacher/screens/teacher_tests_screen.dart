@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/teacher_model.dart';
@@ -723,7 +724,7 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
                 child: Row(
                   children: [
                     Text(
-                      'Date: ${item.test.testDate}',
+                      'Date: ${AppDateFormatter.formatDate(item.test.testDate)}',
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -826,7 +827,7 @@ class _TeacherTestsScreenState extends State<TeacherTestsScreen> {
                     _loadTeacherData();
                   },
                   icon: const Icon(Icons.lock_clock_outlined, size: 16, color: AppColors.textSecondary),
-                  label: Text('Marks on ${item.test.testDate}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                  label: Text('Marks on ${AppDateFormatter.formatDate(item.test.testDate)}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: AppColors.border),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

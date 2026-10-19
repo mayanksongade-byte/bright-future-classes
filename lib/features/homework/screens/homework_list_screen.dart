@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../view_models/homework_view_model.dart';
@@ -374,14 +375,14 @@ class _HomeworkListScreenState extends State<HomeworkListScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Assigned: ${item.homework.assignedDate}',
+                  'Assigned: ${AppDateFormatter.formatDate(item.homework.assignedDate)}',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,
                   ),
                 ),
                 Text(
-                  'Due: ${item.homework.dueDate}',
+                  'Due: ${AppDateFormatter.formatDate(item.homework.dueDate)}',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,

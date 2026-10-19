@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/notification_model.dart';
 import '../view_models/notifications_view_model.dart';
@@ -31,9 +32,9 @@ class _NotificationDetailsScreenState extends State<NotificationDetailsScreen> {
 
   String _formatDate(DateTime? d) {
     if (d == null) return '-';
-    return '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final datePart = AppDateFormatter.formatDate(d);
+    final timePart = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    return '$datePart $timePart';
   }
 
   Future<void> _confirmDelete() async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/homework_model.dart';
@@ -86,9 +87,7 @@ class _AddEditHomeworkScreenState extends State<AddEditHomeworkScreen> {
   }
 
   String _formatDate(DateTime d) {
-    return '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
+    return AppDateFormatter.formatDate(d);
   }
 
   Future<void> _selectAssignedDate() async {

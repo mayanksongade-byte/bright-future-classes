@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
@@ -554,7 +555,7 @@ class _AddEditTestScreenState extends State<AddEditTestScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            _formatDate(_testDate),
+                            AppDateFormatter.formatDate(_testDate),
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,

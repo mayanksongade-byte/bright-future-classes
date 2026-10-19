@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/services/firestore_service.dart';
 import '../view_models/tests_view_model.dart';
@@ -193,7 +194,7 @@ class _EnterMarksScreenState extends State<EnterMarksScreen> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
-                                    'Marks entry available on ${test.testDate}.',
+                                    'Marks entry available on ${AppDateFormatter.formatDate(test.testDate)}.',
                                     style: const TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w700,
@@ -425,7 +426,7 @@ class _EnterMarksScreenState extends State<EnterMarksScreen> {
                         const SizedBox(height: 32),
 
                         PrimaryButton(
-                          text: _isFutureExamDate ? 'Marks Entry Available on ${test.testDate}' : 'Save Marks & Remarks',
+                          text: _isFutureExamDate ? 'Marks Entry Available on ${AppDateFormatter.formatDate(test.testDate)}' : 'Save Marks & Remarks',
                           isLoading: _viewModel.isSaving,
                           onPressed: (_isFutureExamDate || _viewModel.isSaving) ? null : _saveMarks,
                         ),

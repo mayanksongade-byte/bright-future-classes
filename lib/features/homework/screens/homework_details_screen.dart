@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../view_models/homework_view_model.dart';
 import 'add_edit_homework_screen.dart';
@@ -274,7 +275,7 @@ class _HomeworkDetailsScreenState extends State<HomeworkDetailsScreen> {
                         Expanded(
                           child: _buildInfoBox(
                             label: 'Assigned Date',
-                            value: _item.homework.assignedDate,
+                            value: AppDateFormatter.formatDate(_item.homework.assignedDate),
                             icon: Icons.calendar_today_rounded,
                           ),
                         ),
@@ -282,7 +283,7 @@ class _HomeworkDetailsScreenState extends State<HomeworkDetailsScreen> {
                         Expanded(
                           child: _buildInfoBox(
                             label: 'Due Date',
-                            value: _item.homework.dueDate,
+                            value: AppDateFormatter.formatDate(_item.homework.dueDate),
                             icon: Icons.event_available_rounded,
                             valueColor: AppColors.warning,
                           ),

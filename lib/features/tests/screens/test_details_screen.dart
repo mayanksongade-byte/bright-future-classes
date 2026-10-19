@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/repositories/test_repository.dart';
 import '../../../data/services/firestore_service.dart';
@@ -499,7 +500,7 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
                         Expanded(
                           child: _buildInfoBox(
                             label: 'Test Date',
-                            value: _item.test.testDate,
+                            value: AppDateFormatter.formatDate(_item.test.testDate),
                             icon: Icons.calendar_today_rounded,
                           ),
                         ),
@@ -564,7 +565,7 @@ class _TestDetailsScreenState extends State<TestDetailsScreen> {
                                 color: _item.isFutureExamDate ? AppColors.textSecondary : AppColors.primaryEmerald),
                             label: Text(
                               _item.isFutureExamDate
-                                  ? 'Marks on ${_item.test.testDate}'
+                                  ? 'Marks on ${AppDateFormatter.formatDate(_item.test.testDate)}'
                                   : 'Enter Marks',
                               style: TextStyle(
                                 color: _item.isFutureExamDate

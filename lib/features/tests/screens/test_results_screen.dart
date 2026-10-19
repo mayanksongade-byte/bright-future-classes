@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../data/models/mark_audit_model.dart';
 import '../../../data/repositories/test_repository.dart';
 import '../view_models/tests_view_model.dart';
@@ -164,7 +165,7 @@ class _TestResultsScreenState extends State<TestResultsScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Class: ${widget.testItem.classModel != null ? widget.testItem.classModel!.className : 'N/A'} • Date: ${test.testDate} • Total Marks: ${test.totalMarks.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}${test.passingMarks != null ? ' • Passing: ${test.passingMarks!.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}' : ''}',
+                          'Class: ${widget.testItem.classModel != null ? widget.testItem.classModel!.className : 'N/A'} • Date: ${AppDateFormatter.formatDate(test.testDate)} • Total Marks: ${test.totalMarks.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}${test.passingMarks != null ? ' • Passing: ${test.passingMarks!.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}' : ''}',
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppColors.textSecondary,

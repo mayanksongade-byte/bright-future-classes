@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/fee_model.dart';
 import '../view_models/fees_view_model.dart';
@@ -371,7 +372,7 @@ class _FeeDetailsScreenState extends State<FeeDetailsScreen> {
                   'Class: ${_item.classModel != null ? _item.classModel!.className : 'N/A'}'),
               Text('Academic Year: ${_item.fee.academicYear}'),
               const Divider(),
-              Text('Payment Date: ${payment.paymentDate}'),
+              Text('Payment Date: ${AppDateFormatter.formatDate(payment.paymentDate)}'),
               Text('Payment Method: ${payment.paymentMethod}'),
               if (payment.note.isNotEmpty) Text('Note: ${payment.note}'),
               const Divider(),
@@ -705,7 +706,7 @@ class _FeeDetailsScreenState extends State<FeeDetailsScreen> {
                                               ),
                                             ),
                                             Text(
-                                              payment.paymentDate,
+                                              AppDateFormatter.formatDate(payment.paymentDate),
                                               style: const TextStyle(
                                                 fontSize: 12,
                                                 color: AppColors.textSecondary,

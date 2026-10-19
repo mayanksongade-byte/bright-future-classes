@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/mark_audit_model.dart';
 import '../../../data/models/mark_model.dart';
@@ -100,7 +101,7 @@ class TestItem {
 
   String get editorAttribution {
     if (marksEnteredCount == 0) {
-      return isFutureExamDate ? 'Marks entry available on ${test.testDate}' : 'Marks pending';
+      return isFutureExamDate ? 'Marks entry available on ${AppDateFormatter.formatDate(test.testDate)}' : 'Marks pending';
     }
 
     if (audits.isEmpty) {
@@ -968,7 +969,7 @@ class TestsViewModel extends ChangeNotifier {
     final now = DateTime.now();
     final todayStr = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     if (test.testDate.isNotEmpty && test.testDate.trim().compareTo(todayStr) > 0) {
-      _errorMessage = 'Marks entry available on ${test.testDate}.';
+      _errorMessage = 'Marks entry available on ${AppDateFormatter.formatDate(test.testDate)}.';
       notifyListeners();
       return false;
     }

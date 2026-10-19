@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/notice_model.dart';
 import '../../../data/repositories/class_repository.dart';
@@ -149,9 +150,7 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
   }
 
   String _formatDate(DateTime d) {
-    return '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
+    return AppDateFormatter.formatDate(d);
   }
 
   Color _getStatusColor(String status) {

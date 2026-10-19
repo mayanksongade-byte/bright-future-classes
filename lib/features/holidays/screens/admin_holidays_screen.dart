@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
@@ -176,7 +177,7 @@ class _AdminHolidaysScreenState extends State<AdminHolidaysScreen> {
                                 labelText: 'Start Date',
                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                               ),
-                              child: Text(formatDateStr(startDate)),
+                              child: Text(AppDateFormatter.formatDate(startDate)),
                             ),
                           ),
                         ),
@@ -199,7 +200,7 @@ class _AdminHolidaysScreenState extends State<AdminHolidaysScreen> {
                                 labelText: 'End Date',
                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                               ),
-                              child: Text(formatDateStr(endDate)),
+                              child: Text(AppDateFormatter.formatDate(endDate)),
                             ),
                           ),
                         ),
@@ -509,8 +510,8 @@ class _AdminHolidaysScreenState extends State<AdminHolidaysScreen> {
                                             const SizedBox(width: 6),
                                             Text(
                                               isRange
-                                                  ? '${holiday.startDate} to ${holiday.endDate}'
-                                                  : holiday.startDate,
+                                                  ? '${AppDateFormatter.formatDate(holiday.startDate)} to ${AppDateFormatter.formatDate(holiday.endDate)}'
+                                                  : AppDateFormatter.formatDate(holiday.startDate),
                                               style: const TextStyle(
                                                 fontSize: 13,
                                                 fontWeight: FontWeight.w600,

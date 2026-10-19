@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
@@ -45,9 +46,7 @@ class _ComplaintsListScreenState extends State<ComplaintsListScreen> {
 
   String _formatDate(DateTime? d) {
     if (d == null) return '-';
-    return '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
+    return AppDateFormatter.formatDate(d);
   }
 
   Color _getStatusColor(String status) {

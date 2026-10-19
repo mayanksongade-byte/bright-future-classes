@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../view_models/tests_view_model.dart';
@@ -475,7 +476,7 @@ class _TestsListScreenState extends State<TestsListScreen> {
                   child: Row(
                     children: [
                       Text(
-                        'Date: ${item.test.testDate}',
+                        'Date: ${AppDateFormatter.formatDate(item.test.testDate)}',
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.textSecondary,

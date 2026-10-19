@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/complaint_model.dart';
 import '../../../data/models/student_model.dart';
@@ -241,9 +242,9 @@ class _ComplaintDetailsScreenState extends State<ComplaintDetailsScreen> {
 
   String _formatDate(DateTime? d) {
     if (d == null) return '-';
-    return '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final datePart = AppDateFormatter.formatDate(d);
+    final timePart = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    return '$datePart $timePart';
   }
 
   Color _getStatusColor(String status) {
@@ -335,6 +336,7 @@ class _ComplaintDetailsScreenState extends State<ComplaintDetailsScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
+
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.all(20),
           child: Center(
