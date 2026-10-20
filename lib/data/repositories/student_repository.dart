@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../models/student_model.dart';
 import '../services/firestore_service.dart';
 
@@ -6,15 +7,17 @@ class StudentRepository {
   final FirestoreService _firestoreService;
 
   StudentRepository({FirestoreService? firestoreService})
-      : _firestoreService = firestoreService ?? FirestoreService();
+    : _firestoreService = firestoreService ?? FirestoreService();
 
   Future<void> createStudent(StudentModel student) async {
     try {
-      final exists =
-          await _firestoreService.checkStudentExists(student.studentId);
+      final exists = await _firestoreService.checkStudentExists(
+        student.studentId,
+      );
       if (exists) {
         throw Exception(
-            'Student ID "${student.studentId}" already exists. Please use a unique ID.');
+          'Student ID "${student.studentId}" already exists. Please use a unique ID.',
+        );
       }
       await _firestoreService.saveStudentDocument(
         student.studentId,
@@ -23,7 +26,8 @@ class StudentRepository {
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw Exception(
-            'Permission denied. Only active admins can create student records.');
+          'Permission denied. Only active admins can create student records.',
+        );
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {
@@ -44,7 +48,8 @@ class StudentRepository {
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw Exception(
-            'Permission denied. Only active admins can update student records.');
+          'Permission denied. Only active admins can update student records.',
+        );
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {
@@ -70,6 +75,16 @@ class StudentRepository {
     }
   }
 
+  Future<StudentModel?> getStudentById(String studentId) async {
+    try {
+      final data = await _firestoreService.getStudentDocument(studentId);
+      if (data == null) return null;
+      return StudentModel.fromMap(data, studentId);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> deleteStudent(String studentId) async {
     try {
       if (studentId.isEmpty) {
@@ -79,7 +94,8 @@ class StudentRepository {
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw Exception(
-            'Permission denied. Only active admins can delete students.');
+          'Permission denied. Only active admins can delete students.',
+        );
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {

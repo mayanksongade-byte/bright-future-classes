@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/formatters.dart';
@@ -47,6 +50,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
   final TestRepository _testRepository = TestRepository();
   final NoticeRepository _noticeRepository = NoticeRepository();
   final ComplaintRepository _complaintRepository = ComplaintRepository();
+  final FirestoreService _firestoreService = FirestoreService();
 
   bool _isLoading = true;
   bool _isAdmin = true;
@@ -65,9 +69,40 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
 
   List<StudentAcademicResult> _academicResults = [];
   StudentAcademicSummary? _academicSummary;
+  String? _academicFetchError;
 
   List<NoticeModel> _applicableNotices = [];
   List<ComplaintModel> _studentComplaints = [];
+
+  bool _isTeacherAssignedToClass(
+    TeacherModel? teacher,
+    String? studentClassId, {
+    ClassModel? assignedClass,
+  }) {
+    if (teacher == null) return false;
+
+    final Set<String> targetIdentifiers = {};
+    if (studentClassId != null && studentClassId.trim().isNotEmpty) {
+      targetIdentifiers.add(studentClassId.trim().toLowerCase());
+    }
+    if (assignedClass != null) {
+      if (assignedClass.classId.trim().isNotEmpty) {
+        targetIdentifiers.add(assignedClass.classId.trim().toLowerCase());
+      }
+      if (assignedClass.className.trim().isNotEmpty) {
+        targetIdentifiers.add(assignedClass.className.trim().toLowerCase());
+      }
+    }
+
+    if (targetIdentifiers.isEmpty) return false;
+
+    for (var cId in teacher.classIds) {
+      if (targetIdentifiers.contains(cId.trim().toLowerCase())) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -76,11 +111,49 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
     _checkRoleAndLoadDetails();
   }
 
+  Future<TeacherModel?> _resolveLoggedInTeacher(
+    User user,
+    Map<String, dynamic>? userDoc,
+  ) async {
+    try {
+      final customTeacherId = userDoc?['teacherId'] as String? ?? '';
+      if (customTeacherId.isNotEmpty) {
+        final data = await FirestoreService().getTeacherDocument(
+          customTeacherId,
+        );
+        if (data != null) {
+          return TeacherModel.fromMap(data, customTeacherId);
+        }
+      }
+      final directData = await FirestoreService().getTeacherDocument(user.uid);
+      if (directData != null) {
+        return TeacherModel.fromMap(directData, user.uid);
+      }
+      if (_isAdmin) {
+        final allTeachers = await _teacherRepository.getTeachers();
+        for (var t in allTeachers) {
+          if (t.userId == user.uid ||
+              t.teacherId == user.uid ||
+              t.teacherId == customTeacherId) {
+            return t;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint(
+        '[StudentDetailsScreen] Error resolving logged-in teacher: $e',
+      );
+    }
+    return null;
+  }
+
   Future<void> _checkRoleAndLoadDetails() async {
     try {
       final currentUser = AuthService().currentUser;
       if (currentUser != null) {
-        final userDoc = await FirestoreService().getUserDocument(currentUser.uid);
+        final userDoc = await FirestoreService().getUserDocument(
+          currentUser.uid,
+        );
         final role = (userDoc?['role'] as String? ?? '').toLowerCase();
         final isActive = userDoc?['isActive'] as bool? ?? false;
         final isTeacherRole = (role == 'teacher') && isActive;
@@ -88,11 +161,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
 
         TeacherModel? teacher;
         if (isTeacherRole) {
-          final teacherId = userDoc?['teacherId'] as String? ?? currentUser.uid;
-          final teacherData = await FirestoreService().getTeacherDocument(teacherId);
-          if (teacherData != null) {
-            teacher = TeacherModel.fromMap(teacherData, teacherId);
-          }
+          teacher = await _resolveLoggedInTeacher(currentUser, userDoc);
         }
 
         if (mounted) {
@@ -114,42 +183,130 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
     });
 
     try {
+      // 0. Refresh student doc if possible
+      try {
+        final freshStudentDoc = await _firestoreService.getStudentDocument(
+          _student.studentId,
+        );
+        if (freshStudentDoc != null) {
+          _student = StudentModel.fromMap(freshStudentDoc, _student.studentId);
+        }
+      } catch (_) {}
+
       // 1. Resolve Class
       ClassModel? cls;
-      if (_student.classId != null && _student.classId!.isNotEmpty) {
-        final classes = await _classRepository.getClasses();
-        for (var c in classes) {
-          if (c.classId == _student.classId) {
-            cls = c;
-            break;
+      try {
+        final cleanStudentClassId = _student.classId?.trim() ?? '';
+        if (_isAdmin) {
+          final classes = await _classRepository.getClasses();
+          for (var c in classes) {
+            if (cleanStudentClassId.isNotEmpty &&
+                (c.classId.trim().toLowerCase() ==
+                        cleanStudentClassId.toLowerCase() ||
+                    c.className.trim().toLowerCase() ==
+                        cleanStudentClassId.toLowerCase())) {
+              cls = c;
+              break;
+            }
+          }
+        } else {
+          // Teacher Class Resolution
+          // A. If student has classId, try direct lookup by doc ID
+          if (cleanStudentClassId.isNotEmpty) {
+            final classData = await _firestoreService.getClassDocument(
+              cleanStudentClassId,
+            );
+            if (classData != null) {
+              cls = ClassModel.fromMap(classData, cleanStudentClassId);
+            }
+          }
+
+          // B. If not found or student.classId was a className, check teacher's assigned classes
+          if (cls == null &&
+              _loggedInTeacher != null &&
+              _loggedInTeacher!.classIds.isNotEmpty) {
+            for (var cId in _loggedInTeacher!.classIds) {
+              final cData = await _firestoreService.getClassDocument(cId);
+              if (cData != null) {
+                final cModel = ClassModel.fromMap(cData, cId);
+                if (cleanStudentClassId.isNotEmpty &&
+                    (cModel.classId.trim().toLowerCase() ==
+                            cleanStudentClassId.toLowerCase() ||
+                        cModel.className.trim().toLowerCase() ==
+                            cleanStudentClassId.toLowerCase())) {
+                  cls = cModel;
+                  break;
+                }
+              }
+            }
+          }
+
+          // C. If still not found (or student.classId was empty), check which of teacher's classes contains this student
+          if (cls == null &&
+              _loggedInTeacher != null &&
+              _loggedInTeacher!.classIds.isNotEmpty) {
+            for (var cId in _loggedInTeacher!.classIds) {
+              final studentDocs = await _firestoreService
+                  .getStudentsDocumentsByClassId(cId);
+              final isEnrolled = studentDocs.any(
+                (d) =>
+                    d.id == _student.studentId ||
+                    (d.data()['userId'] != null &&
+                        d.data()['userId'] == _student.userId),
+              );
+              if (isEnrolled) {
+                final cData = await _firestoreService.getClassDocument(cId);
+                if (cData != null) {
+                  cls = ClassModel.fromMap(cData, cId);
+                  break;
+                }
+              }
+            }
           }
         }
+      } catch (e) {
+        debugPrint('[StudentDetailsScreen] Failed to resolve class: $e');
       }
       _assignedClass = cls;
 
       // 2. Resolve Teacher assigned to this class
       TeacherModel? teacher;
-      if (_student.classId != null && _student.classId!.isNotEmpty) {
-        final teachers = await _teacherRepository.getTeachers();
-        for (var t in teachers) {
-          if (t.classIds.contains(_student.classId)) {
-            teacher = t;
-            break;
+      try {
+        if (_isAdmin) {
+          final teachers = await _teacherRepository.getTeachers();
+          final classTarget = _assignedClass?.classId ?? _student.classId ?? '';
+          if (classTarget.isNotEmpty) {
+            for (var t in teachers) {
+              if (t.classIds.contains(classTarget)) {
+                teacher = t;
+                break;
+              }
+            }
+          }
+        } else if (_isTeacher && _loggedInTeacher != null) {
+          if (_isTeacherAssignedToClass(
+            _loggedInTeacher,
+            _student.classId,
+            assignedClass: _assignedClass,
+          )) {
+            teacher = _loggedInTeacher;
           }
         }
+      } catch (e) {
+        debugPrint('[StudentDetailsScreen] Failed to resolve teacher: $e');
       }
       _assignedTeacher = teacher;
 
       // 3. Resolve Attendance
       try {
-        List<AttendanceModel> attendanceList =
-            await _attendanceRepository.getAttendanceForStudent(_student.studentId);
+        List<AttendanceModel> attendanceList = await _attendanceRepository
+            .getAttendanceForStudent(_student.studentId);
 
         if (_student.userId != null &&
             _student.userId!.isNotEmpty &&
             _student.userId != _student.studentId) {
-          final additionalList =
-              await _attendanceRepository.getAttendanceForStudent(_student.userId!);
+          final additionalList = await _attendanceRepository
+              .getAttendanceForStudent(_student.userId!);
           final Map<String, AttendanceModel> mergedMap = {};
           for (var a in attendanceList) {
             mergedMap[a.attendanceId] = a;
@@ -188,15 +345,18 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
           });
         }
       } catch (e) {
-        debugPrint('[StudentDetailsScreen] Failed to load student attendance summary: $e');
+        debugPrint(
+          '[StudentDetailsScreen] Failed to load student attendance summary: $e',
+        );
       }
 
       // 4. Resolve Fees (Admin Only)
       if (_isAdmin) {
         try {
           final allFees = await _feeRepository.getAllFees();
-          final studentFees =
-              allFees.where((f) => f.studentId == _student.studentId).toList();
+          final studentFees = allFees
+              .where((f) => f.studentId == _student.studentId)
+              .toList();
           double total = 0.0;
           for (var f in studentFees) {
             total += f.finalPayable;
@@ -217,17 +377,79 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
       }
 
       // 5. Resolve Tests & Marks
+      _academicFetchError = null;
       try {
+        final Set<String> queryClassIdentifiers = {};
+        if (_student.classId != null && _student.classId!.trim().isNotEmpty) {
+          queryClassIdentifiers.add(_student.classId!.trim());
+        }
+        if (_assignedClass != null) {
+          if (_assignedClass!.classId.trim().isNotEmpty) {
+            queryClassIdentifiers.add(_assignedClass!.classId.trim());
+          }
+          if (_assignedClass!.className.trim().isNotEmpty) {
+            queryClassIdentifiers.add(_assignedClass!.className.trim());
+          }
+        }
+
+        // If teacher, also ensure any teacher classId matching assignedClass or student is added
+        if (_isTeacher && _loggedInTeacher != null) {
+          for (var cId in _loggedInTeacher!.classIds) {
+            if (_isTeacherAssignedToClass(
+              _loggedInTeacher,
+              cId,
+              assignedClass: _assignedClass,
+            )) {
+              queryClassIdentifiers.add(cId);
+            }
+          }
+        }
+
         List<TestModel> tests = [];
-        if (_student.classId != null && _student.classId!.isNotEmpty) {
-          if (_isTeacher && _loggedInTeacher != null) {
-            if (_loggedInTeacher!.classIds.contains(_student.classId)) {
-              tests = await _testRepository.getTestsForClass(_student.classId!);
+        if (queryClassIdentifiers.isNotEmpty) {
+          if (_isTeacher) {
+            if (_loggedInTeacher == null) {
+              final currentUser = AuthService().currentUser;
+              if (currentUser != null) {
+                final userDoc = await FirestoreService().getUserDocument(
+                  currentUser.uid,
+                );
+                _loggedInTeacher = await _resolveLoggedInTeacher(
+                  currentUser,
+                  userDoc,
+                );
+              }
+            }
+
+            if (_isTeacherAssignedToClass(
+              _loggedInTeacher,
+              _student.classId,
+              assignedClass: _assignedClass,
+            )) {
+              final Map<String, TestModel> testMap = {};
+              for (var classIdKey in queryClassIdentifiers) {
+                final classTests = await _testRepository.getTestsForClass(
+                  classIdKey,
+                );
+                for (var t in classTests) {
+                  testMap[t.testId] = t;
+                }
+              }
+              tests = testMap.values.toList();
             } else {
               tests = [];
             }
           } else {
-            tests = await _testRepository.getTestsForClass(_student.classId!);
+            final Map<String, TestModel> testMap = {};
+            for (var classIdKey in queryClassIdentifiers) {
+              final classTests = await _testRepository.getTestsForClass(
+                classIdKey,
+              );
+              for (var t in classTests) {
+                testMap[t.testId] = t;
+              }
+            }
+            tests = testMap.values.toList();
           }
         }
 
@@ -235,38 +457,91 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
           tests = await _testRepository.getAllTests();
         }
 
-        // If logged-in user is a teacher, filter tests to authorized subjects only
+        // For teachers, ensure test classId belongs to teacher's assigned classes
         if (_isTeacher && _loggedInTeacher != null) {
-          tests = tests.where((t) => _loggedInTeacher!.teachesSubject(t.subject)).toList();
+          tests = tests
+              .where(
+                (t) => _isTeacherAssignedToClass(
+                  _loggedInTeacher,
+                  t.classId,
+                  assignedClass: _assignedClass,
+                ),
+              )
+              .toList();
         }
 
-        final studentMarks = await _testRepository.getMarksForStudent(_student.studentId);
+        if (kDebugMode) {
+          debugPrint(
+            '[StudentDetailsScreen Debug] StudentDocId: ${_student.studentId}, StudentUserId: ${_student.userId}, ClassId: ${_student.classId}',
+          );
+          debugPrint(
+            '[StudentDetailsScreen Debug] IsAdmin: $_isAdmin, IsTeacher: $_isTeacher, TeacherId: ${_loggedInTeacher?.teacherId}, ClassIds: ${_loggedInTeacher?.classIds}',
+          );
+          debugPrint(
+            '[StudentDetailsScreen Debug] QueryClassIdentifiers: $queryClassIdentifiers, TestsCount: ${tests.length}',
+          );
+        }
+
         final Map<String, MarkModel> markByTestId = {};
-        for (var m in studentMarks) {
-          markByTestId[m.testId] = m;
+        for (var test in tests) {
+          try {
+            final testMarks = await _testRepository.getMarksForTest(
+              test.testId,
+              classId: test.classId,
+            );
+            for (var m in testMarks) {
+              final matchDocId =
+                  m.studentId == _student.studentId ||
+                  m.studentId.trim().toLowerCase() ==
+                      _student.studentId.trim().toLowerCase();
+              final matchUserId =
+                  _student.userId != null &&
+                  _student.userId!.isNotEmpty &&
+                  (m.studentId == _student.userId ||
+                      m.studentId.trim().toLowerCase() ==
+                          _student.userId!.trim().toLowerCase());
+              if (matchDocId || matchUserId) {
+                markByTestId[test.testId] = m;
+                break;
+              }
+            }
+          } catch (markErr) {
+            debugPrint(
+              '[StudentDetailsScreen] Error fetching marks for test ${test.testId}: $markErr',
+            );
+          }
         }
 
         final List<StudentAcademicResult> parsedResults = [];
         for (var test in tests) {
-          if (_student.classId != null &&
-              _student.classId!.isNotEmpty &&
-              test.classId != _student.classId) {
-            continue;
-          }
           final m = markByTestId[test.testId];
-          parsedResults.add(StudentAcademicResult(
-            test: test,
-            mark: m,
-            classModel: _assignedClass,
-          ));
+          parsedResults.add(
+            StudentAcademicResult(
+              test: test,
+              mark: m,
+              classModel: _assignedClass,
+            ),
+          );
         }
 
-        parsedResults.sort((a, b) => b.test.testDate.compareTo(a.test.testDate));
+        parsedResults.sort(
+          (a, b) => b.test.testDate.compareTo(a.test.testDate),
+        );
 
         _academicResults = parsedResults;
         _academicSummary = StudentAcademicSummary(allResults: parsedResults);
+
+        if (kDebugMode) {
+          debugPrint(
+            '[StudentDetailsScreen Debug] Final Academic Results Count: ${parsedResults.length}, Completed: ${_academicSummary?.completedCount}',
+          );
+        }
       } catch (e) {
-        debugPrint('[StudentDetailsScreen] Error resolving tests & marks: $e');
+        debugPrint('[StudentDetailsScreen] ERROR resolving tests & marks: $e');
+        _academicFetchError = e.toString().replaceFirst(
+          RegExp(r'^Exception:\s*'),
+          '',
+        );
       }
 
       // 6. Resolve Notices (Admin Only)
@@ -276,7 +551,8 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
           _applicableNotices = notices.where((notice) {
             final isAllStudents =
                 notice.targetAudience.toLowerCase() == 'all_students';
-            final isClassMatch = _student.classId != null &&
+            final isClassMatch =
+                _student.classId != null &&
                 _student.classId!.isNotEmpty &&
                 notice.classIds.contains(_student.classId);
             return isAllStudents || isClassMatch;
@@ -292,11 +568,10 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
               .where((c) => c.studentId == _student.studentId)
               .toList();
         } else {
-          _studentComplaints =
-              await _complaintRepository.getComplaintsForStudent(_student.studentId);
+          _studentComplaints = await _complaintRepository
+              .getComplaintsForStudent(_student.studentId);
         }
       } catch (_) {}
-
     } catch (_) {
     } finally {
       if (mounted) {
@@ -368,8 +643,10 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
         actions: _isAdmin
             ? [
                 IconButton(
-                  icon: const Icon(Icons.edit_outlined,
-                      color: AppColors.primaryEmerald),
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    color: AppColors.primaryEmerald,
+                  ),
                   onPressed: _navigateToEditStudent,
                   tooltip: 'Edit Student',
                 ),
@@ -385,7 +662,10 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
             ? const Center(child: AppLoadingIndicator())
             : SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 20,
+                ),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 800),
@@ -403,10 +683,19 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                           children: [
                             _buildInfoRow('Full Name', _student.name),
                             _buildInfoRow('Student ID', _student.studentId),
-                            _buildInfoRow('Date of Birth',
-                                _student.dateOfBirth.isNotEmpty ? AppDateFormatter.formatDate(_student.dateOfBirth) : '-'),
+                            _buildInfoRow(
+                              'Date of Birth',
+                              _student.dateOfBirth.isNotEmpty
+                                  ? AppDateFormatter.formatDate(
+                                      _student.dateOfBirth,
+                                    )
+                                  : '-',
+                            ),
                             _buildInfoRow('Gender', _student.gender),
-                            _buildInfoRow('Status', isActive ? 'Active' : 'Inactive'),
+                            _buildInfoRow(
+                              'Status',
+                              isActive ? 'Active' : 'Inactive',
+                            ),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -416,10 +705,16 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                           title: 'Contact Information',
                           icon: Icons.phone_outlined,
                           children: [
-                            _buildInfoRow('Student Phone',
-                                _student.phone.isNotEmpty ? _student.phone : '-'),
-                            _buildInfoRow('Address',
-                                _student.address.isNotEmpty ? _student.address : '-'),
+                            _buildInfoRow(
+                              'Student Phone',
+                              _student.phone.isNotEmpty ? _student.phone : '-',
+                            ),
+                            _buildInfoRow(
+                              'Address',
+                              _student.address.isNotEmpty
+                                  ? _student.address
+                                  : '-',
+                            ),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -429,10 +724,18 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                           title: 'Parent / Guardian Information',
                           icon: Icons.family_restroom_outlined,
                           children: [
-                            _buildInfoRow('Parent Name',
-                                _student.parentName.isNotEmpty ? _student.parentName : '-'),
-                            _buildInfoRow('Parent Phone',
-                                _student.parentPhone.isNotEmpty ? _student.parentPhone : '-'),
+                            _buildInfoRow(
+                              'Parent Name',
+                              _student.parentName.isNotEmpty
+                                  ? _student.parentName
+                                  : '-',
+                            ),
+                            _buildInfoRow(
+                              'Parent Phone',
+                              _student.parentPhone.isNotEmpty
+                                  ? _student.parentPhone
+                                  : '-',
+                            ),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -451,7 +754,10 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                     : 'Not Assigned',
                               ),
                               if (_assignedClass != null)
-                                _buildInfoRow('Academic Year', _assignedClass!.academicYear),
+                                _buildInfoRow(
+                                  'Academic Year',
+                                  _assignedClass!.academicYear,
+                                ),
                               _buildInfoRow(
                                 'Assigned Teacher',
                                 _assignedTeacher != null
@@ -488,7 +794,8 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                   Expanded(
                                     child: _buildMetricBox(
                                       label: 'Attendance',
-                                      value: '${_attendancePercentage.toStringAsFixed(1)}%',
+                                      value:
+                                          '${_attendancePercentage.toStringAsFixed(1)}%',
                                       color: AppColors.teacherAccent,
                                     ),
                                   ),
@@ -501,17 +808,23 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                   onPressed: () {
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
-                                        builder: (context) => StudentAttendanceScreen(
-                                          studentId: _student.studentId,
-                                        ),
+                                        builder: (context) =>
+                                            StudentAttendanceScreen(
+                                              studentId: _student.studentId,
+                                            ),
                                       ),
                                     );
                                   },
-                                  icon: const Icon(Icons.history_rounded, size: 18),
+                                  icon: const Icon(
+                                    Icons.history_rounded,
+                                    size: 18,
+                                  ),
                                   label: const Text('View Attendance History'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: AppColors.primaryEmerald,
-                                    side: const BorderSide(color: AppColors.primaryEmerald),
+                                    side: const BorderSide(
+                                      color: AppColors.primaryEmerald,
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                     ),
@@ -532,7 +845,8 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                   Expanded(
                                     child: _buildMetricBox(
                                       label: 'Total Payable',
-                                      value: '₹${_totalFees.toStringAsFixed(0)}',
+                                      value:
+                                          '₹${_totalFees.toStringAsFixed(0)}',
                                       color: AppColors.textMain,
                                     ),
                                   ),
@@ -548,8 +862,11 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                   Expanded(
                                     child: _buildMetricBox(
                                       label: 'Pending',
-                                      value: '₹${_pendingFees.toStringAsFixed(0)}',
-                                      color: _pendingFees > 0 ? AppColors.error : AppColors.success,
+                                      value:
+                                          '₹${_pendingFees.toStringAsFixed(0)}',
+                                      color: _pendingFees > 0
+                                          ? AppColors.error
+                                          : AppColors.success,
                                     ),
                                   ),
                                 ],
@@ -561,73 +878,369 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
 
                         // SECTION 7 — TESTS & MARKS (Allowed for teacher)
                         _buildSectionCard(
-                          title: 'Tests & Marks',
+                          title: 'Tests & Academic Performance',
                           icon: Icons.assignment_outlined,
                           children: [
-                            if (_academicSummary == null || _academicSummary!.totalTests == 0)
+                            if (_academicFetchError != null)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.error.withValues(
+                                      alpha: 0.08,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: AppColors.error.withValues(
+                                        alpha: 0.3,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      const Icon(
+                                        Icons.error_outline_rounded,
+                                        color: AppColors.error,
+                                        size: 28,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'Unable to load academic results: $_academicFetchError',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.error,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      ElevatedButton.icon(
+                                        onPressed: _loadAllStudentDetails,
+                                        icon: const Icon(
+                                          Icons.refresh_rounded,
+                                          size: 16,
+                                        ),
+                                        label: const Text('Retry Loading'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: AppColors.error,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 8,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            else if (_academicSummary == null ||
+                                _academicSummary!.totalTests == 0)
                               const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 8),
+                                padding: EdgeInsets.symmetric(vertical: 12),
                                 child: Text(
-                                  'No tests recorded for this class yet.',
+                                  'No test records found for this class.',
                                   style: AppTextStyles.subtitle,
                                 ),
                               )
                             else ...[
+                              // 1. SUMMARY METRICS CARDS
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final isWide = constraints.maxWidth > 500;
+                                  return GridView.count(
+                                    shrinkWrap: true,
+                                    physics:
+                                        const NeverScrollableScrollPhysics(),
+                                    crossAxisCount: isWide ? 4 : 2,
+                                    crossAxisSpacing: 8,
+                                    mainAxisSpacing: 8,
+                                    childAspectRatio: isWide ? 1.5 : 1.6,
+                                    children: [
+                                      _buildMetricBox(
+                                        label: 'Completed Tests',
+                                        value:
+                                            '${_academicSummary!.completedCount} / ${_academicSummary!.totalTests}',
+                                        color: AppColors.textMain,
+                                      ),
+                                      _buildMetricBox(
+                                        label: 'Weighted Avg',
+                                        value:
+                                            '${_academicSummary!.overallAveragePercentage.toStringAsFixed(1)}%',
+                                        color: AppColors.primaryEmerald,
+                                      ),
+                                      _buildMetricBox(
+                                        label: 'Passed / Failed',
+                                        value:
+                                            '${_academicSummary!.passCount} Passed · ${_academicSummary!.failCount} Failed',
+                                        color: _academicSummary!.failCount == 0
+                                            ? AppColors.success
+                                            : AppColors.warning,
+                                      ),
+                                      _buildMetricBox(
+                                        label: 'Pending Marks',
+                                        value:
+                                            '${_academicSummary!.pendingCount} Pending',
+                                        color:
+                                            _academicSummary!.pendingCount > 0
+                                                ? AppColors.info
+                                                : AppColors.textSecondary,
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 18),
+
+                              // 2. SUBJECT-WISE PERFORMANCE SECTION WITH PROGRESS BARS
                               Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Expanded(
-                                    child: _buildMetricBox(
-                                      label: 'Completed Tests',
-                                      value: '${_academicSummary!.completedCount} / ${_academicSummary!.totalTests}',
+                                  const Text(
+                                    'Subject-Wise Performance',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
                                       color: AppColors.textMain,
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: _buildMetricBox(
-                                      label: 'Overall Average',
-                                      value: '${_academicSummary!.overallAveragePercentage.toStringAsFixed(1)}%',
-                                      color: AppColors.primaryEmerald,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: _buildMetricBox(
-                                      label: 'Pass / Fail',
-                                      value: '${_academicSummary!.passCount} P · ${_academicSummary!.failCount} F',
-                                      color: _academicSummary!.failCount == 0 ? AppColors.success : AppColors.warning,
+                                  Text(
+                                    '${_academicSummary!.subjectSummaries.length} Subjects',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
 
-                              const Text(
-                                'Subject Performance Summary',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textMain,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
                               ..._academicSummary!.subjectSummaries.map((sub) {
+                                final double avgPerc =
+                                    sub.subjectAveragePercentage;
+                                final bool isPassingAvg = avgPerc >= 35.0;
+
                                 return Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
+                                  margin: const EdgeInsets.only(bottom: 10),
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: AppColors.background,
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(color: AppColors.border),
                                   ),
-                                  child: Row(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              sub.subjectName,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.textMain,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow
+                                                  .ellipsis,
+                                            ),
+                                          ),
+                                          Text(
+                                            '${avgPerc.toStringAsFixed(1)}%',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w800,
+                                              color: sub.completedCount > 0
+                                                  ? (isPassingAvg
+                                                      ? AppColors.darkEmerald
+                                                      : AppColors.error)
+                                                  : AppColors.textSecondary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // Progress Bar
+                                      ClipRRect(
+                                        borderRadius:
+                                            BorderRadius.circular(4),
+                                        child: LinearProgressIndicator(
+                                          value: sub.completedCount > 0
+                                              ? (avgPerc / 100.0).clamp(
+                                                  0.0,
+                                                  1.0,
+                                                )
+                                              : 0.0,
+                                          backgroundColor: AppColors.border,
+                                          color: isPassingAvg
+                                              ? AppColors.primaryEmerald
+                                              : AppColors.error,
+                                          minHeight: 6,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            '${sub.completedCount} of ${sub.totalTests} tests evaluated',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                          Text(
+                                            '${sub.passCount} Pass · ${sub.failCount} Fail${sub.pendingCount > 0 ? ' · ${sub.pendingCount} Pending' : ''}',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.textMain,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+
+                              const SizedBox(height: 18),
+
+                              // 3. RECENT TEST HISTORY PREVIEW
+                              if (_academicResults.isNotEmpty) ...[
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Recent Test History',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textMain,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Showing ${_academicResults.length > 3 ? 3 : _academicResults.length} of ${_academicResults.length}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+
+                                ..._academicResults.take(3).map((res) {
+                                  Color badgeColor = AppColors.info;
+                                  Color badgeTextColor = AppColors.info;
+                                  if (res.status == 'Pass') {
+                                    badgeColor = AppColors.lightEmerald;
+                                    badgeTextColor = AppColors.darkEmerald;
+                                  } else if (res.status == 'Fail' ||
+                                      res.status == 'Absent') {
+                                    badgeColor = const Color(0xFFFEE2E2);
+                                    badgeTextColor = AppColors.error;
+                                  } else if (res.status == 'Pending') {
+                                    badgeColor = const Color(0xFFFEF3C7);
+                                    badgeTextColor = AppColors.warning;
+                                  }
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.background,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: AppColors.border,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      res.test.testName,
+                                                      style: const TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color:
+                                                            AppColors.textMain,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow
+                                                          .ellipsis,
+                                                    ),
+                                                  ),
+                                                  if (res.isArchived) ...[
+                                                    const SizedBox(width: 6),
+                                                    Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 1,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            AppColors.background,
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(4),
+                                                        border: Border.all(
+                                                          color:
+                                                              AppColors.border,
+                                                        ),
+                                                      ),
+                                                      child: const Text(
+                                                        'Archived',
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          color: AppColors
+                                                              .textSecondary,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                '${res.test.subject} • ${AppDateFormatter.formatDate(res.test.testDate)}',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color:
+                                                      AppColors.textSecondary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
                                           children: [
                                             Text(
-                                              sub.subjectName,
+                                              res.marksDisplay,
                                               style: const TextStyle(
                                                 fontSize: 13,
                                                 fontWeight: FontWeight.w700,
@@ -635,45 +1248,64 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                               ),
                                             ),
                                             const SizedBox(height: 2),
-                                            Text(
-                                              '${sub.completedCount}/${sub.totalTests} Evaluated • ${sub.passCount} Pass · ${sub.failCount} Fail · ${sub.pendingCount} Pending',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                color: AppColors.textSecondary,
+                                            Container(
+                                              padding: const EdgeInsets
+                                                  .symmetric(
+                                                horizontal: 6,
+                                                vertical: 2,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: badgeColor,
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                res.hasMarksValue
+                                                    ? '${res.percentageDisplay} • ${res.status}'
+                                                    : res.status,
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: badgeTextColor,
+                                                ),
                                               ),
                                             ),
                                           ],
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        '${sub.subjectAveragePercentage.toStringAsFixed(1)}%',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.primaryEmerald,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                                const SizedBox(height: 14),
+                              ],
 
-                              const SizedBox(height: 14),
-
+                              // 4. ACTION BUTTONS
                               Row(
                                 children: [
                                   Expanded(
                                     child: OutlinedButton.icon(
                                       onPressed: _navigateToAcademicResults,
-                                      icon: const Icon(Icons.analytics_outlined, size: 16),
-                                      label: const Text('View All Results', style: TextStyle(fontSize: 12)),
+                                      icon: const Icon(
+                                        Icons.analytics_outlined,
+                                        size: 16,
+                                      ),
+                                      label: const Text(
+                                        'View All Results',
+                                        style: TextStyle(fontSize: 12),
+                                      ),
                                       style: OutlinedButton.styleFrom(
-                                        foregroundColor: AppColors.primaryEmerald,
-                                        side: const BorderSide(color: AppColors.primaryEmerald),
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        foregroundColor:
+                                            AppColors.primaryEmerald,
+                                        side: const BorderSide(
+                                          color: AppColors.primaryEmerald,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 10,
+                                        ),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(10),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -684,22 +1316,34 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                       onPressed: () {
                                         Navigator.of(context).push(
                                           MaterialPageRoute(
-                                            builder: (context) => StudentAcademicReportScreen(
-                                              student: _student,
-                                              classModel: _assignedClass,
-                                              results: _academicResults,
-                                            ),
+                                            builder: (context) =>
+                                                StudentAcademicReportScreen(
+                                                  student: _student,
+                                                  classModel: _assignedClass,
+                                                  results: _academicResults,
+                                                ),
                                           ),
                                         );
                                       },
-                                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-                                      label: const Text('Academic Report', style: TextStyle(fontSize: 12)),
+                                      icon: const Icon(
+                                        Icons.picture_as_pdf_outlined,
+                                        size: 16,
+                                      ),
+                                      label: const Text(
+                                        'Academic Report',
+                                        style: TextStyle(fontSize: 12),
+                                      ),
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.primaryEmerald,
+                                        backgroundColor:
+                                            AppColors.primaryEmerald,
                                         foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 10,
+                                        ),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(10),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -731,19 +1375,25 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                   physics: const NeverScrollableScrollPhysics(),
                                   itemCount: _applicableNotices.length,
                                   separatorBuilder: (context, index) =>
-                                      const Divider(height: 1, color: AppColors.border),
+                                      const Divider(
+                                        height: 1,
+                                        color: AppColors.border,
+                                      ),
                                   itemBuilder: (context, index) {
                                     final notice = _applicableNotices[index];
                                     return Padding(
-                                      padding:
-                                          const EdgeInsets.symmetric(vertical: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                      ),
                                       child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Icon(
                                             notice.isPinned
                                                 ? Icons.push_pin_rounded
-                                                : Icons.notifications_none_rounded,
+                                                : Icons
+                                                      .notifications_none_rounded,
                                             size: 18,
                                             color: notice.isPinned
                                                 ? AppColors.primaryEmerald
@@ -768,10 +1418,12 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                                   notice.description,
                                                   style: const TextStyle(
                                                     fontSize: 12,
-                                                    color: AppColors.textSecondary,
+                                                    color:
+                                                        AppColors.textSecondary,
                                                   ),
                                                   maxLines: 2,
-                                                  overflow: TextOverflow.ellipsis,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
                                               ],
                                             ),
@@ -805,15 +1457,21 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                 physics: const NeverScrollableScrollPhysics(),
                                 itemCount: _studentComplaints.length,
                                 separatorBuilder: (context, index) =>
-                                    const Divider(height: 1, color: AppColors.border),
+                                    const Divider(
+                                      height: 1,
+                                      color: AppColors.border,
+                                    ),
                                 itemBuilder: (context, index) {
                                   final complaint = _studentComplaints[index];
                                   final bool isResolved =
-                                      complaint.status.toLowerCase() == 'resolved' ||
-                                      complaint.status.toLowerCase() == 'closed';
+                                      complaint.status.toLowerCase() ==
+                                          'resolved' ||
+                                      complaint.status.toLowerCase() ==
+                                          'closed';
                                   return Padding(
-                                    padding:
-                                        const EdgeInsets.symmetric(vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
                                     child: Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.spaceBetween,
@@ -836,7 +1494,8 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                                 'Type: ${complaint.type} • Priority: ${complaint.priority}',
                                                 style: const TextStyle(
                                                   fontSize: 12,
-                                                  color: AppColors.textSecondary,
+                                                  color:
+                                                      AppColors.textSecondary,
                                                 ),
                                               ),
                                             ],
@@ -844,14 +1503,18 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                         ),
                                         Container(
                                           padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 4),
+                                            horizontal: 10,
+                                            vertical: 4,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: isResolved
                                                 ? AppColors.lightEmerald
-                                                : AppColors.error
-                                                    .withValues(alpha: 0.1),
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                                : AppColors.error.withValues(
+                                                    alpha: 0.1,
+                                                  ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                           ),
                                           child: Text(
                                             complaint.status,
@@ -947,7 +1610,9 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isActive ? AppColors.darkEmerald : AppColors.textSecondary,
+                color: isActive
+                    ? AppColors.darkEmerald
+                    : AppColors.textSecondary,
               ),
             ),
           ),
@@ -1053,7 +1718,11 @@ class PlatformInfoRowContent extends StatelessWidget {
   final String label;
   final String value;
 
-  const PlatformInfoRowContent({super.key, required this.label, required this.value});
+  const PlatformInfoRowContent({
+    super.key,
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {

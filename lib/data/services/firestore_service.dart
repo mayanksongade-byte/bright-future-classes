@@ -4,7 +4,7 @@ class FirestoreService {
   final FirebaseFirestore? _customFirestore;
 
   FirestoreService({FirebaseFirestore? firestore})
-      : _customFirestore = firestore;
+    : _customFirestore = firestore;
 
   FirebaseFirestore get _firestore =>
       _customFirestore ?? FirebaseFirestore.instance;
@@ -26,7 +26,9 @@ class FirestoreService {
   }
 
   Future<void> updateUserProfileDocument(
-      String uid, Map<String, dynamic> data) async {
+    String uid,
+    Map<String, dynamic> data,
+  ) async {
     await _firestore
         .collection('users')
         .doc(uid)
@@ -36,8 +38,10 @@ class FirestoreService {
   // Login ID Mapping Methods
   Future<Map<String, dynamic>?> getLoginIdDocument(String userId) async {
     final formatted = userId.trim().toUpperCase();
-    final docSnapshot =
-        await _firestore.collection('login_ids').doc(formatted).get();
+    final docSnapshot = await _firestore
+        .collection('login_ids')
+        .doc(formatted)
+        .get();
     if (docSnapshot.exists) {
       return docSnapshot.data();
     }
@@ -46,13 +50,17 @@ class FirestoreService {
 
   Future<bool> checkLoginIdExists(String userId) async {
     final formatted = userId.trim().toUpperCase();
-    final docSnapshot =
-        await _firestore.collection('login_ids').doc(formatted).get();
+    final docSnapshot = await _firestore
+        .collection('login_ids')
+        .doc(formatted)
+        .get();
     return docSnapshot.exists;
   }
 
   Future<void> saveLoginIdDocument(
-      String userId, Map<String, dynamic> data) async {
+    String userId,
+    Map<String, dynamic> data,
+  ) async {
     final formatted = userId.trim().toUpperCase();
     await _firestore
         .collection('login_ids')
@@ -84,16 +92,31 @@ class FirestoreService {
 
   // Student Document Methods
   Future<void> saveStudentDocument(
-      String studentId, Map<String, dynamic> data) async {
+    String studentId,
+    Map<String, dynamic> data,
+  ) async {
     await _firestore
         .collection('students')
         .doc(studentId)
         .set(data, SetOptions(merge: true));
   }
 
+  Future<Map<String, dynamic>?> getStudentDocument(String studentId) async {
+    final docSnapshot = await _firestore
+        .collection('students')
+        .doc(studentId)
+        .get();
+    if (docSnapshot.exists) {
+      return docSnapshot.data();
+    }
+    return null;
+  }
+
   Future<bool> checkStudentExists(String studentId) async {
-    final docSnapshot =
-        await _firestore.collection('students').doc(studentId).get();
+    final docSnapshot = await _firestore
+        .collection('students')
+        .doc(studentId)
+        .get();
     return docSnapshot.exists;
   }
 
@@ -102,12 +125,14 @@ class FirestoreService {
     return snapshot.docs.length;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getStudentsDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getStudentsDocuments() async {
     final snapshot = await _firestore.collection('students').get();
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getStudentsDocumentsByClassId(String classId) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getStudentsDocumentsByClassId(String classId) async {
     final snapshot = await _firestore
         .collection('students')
         .where('classId', isEqualTo: classId)
@@ -125,8 +150,13 @@ class FirestoreService {
   }
 
   Future<void> saveTeacherDocument(
-      String teacherId, Map<String, dynamic> data) async {
-    await _firestore.collection('teachers').doc(teacherId).set(data, SetOptions(merge: true));
+    String teacherId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('teachers')
+        .doc(teacherId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<int> getTeacherCount() async {
@@ -134,7 +164,8 @@ class FirestoreService {
     return snapshot.docs.length;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getTeachersDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getTeachersDocuments() async {
     try {
       final snapshot = await _firestore
           .collection('teachers')
@@ -148,14 +179,18 @@ class FirestoreService {
   }
 
   Future<Map<String, dynamic>?> getTeacherDocument(String teacherId) async {
-    final docSnapshot = await _firestore.collection('teachers').doc(teacherId).get();
+    final docSnapshot = await _firestore
+        .collection('teachers')
+        .doc(teacherId)
+        .get();
     if (docSnapshot.exists) {
       return docSnapshot.data();
     }
     return null;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getTeacherDocumentsByClassId(String classId) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getTeacherDocumentsByClassId(String classId) async {
     try {
       final snapshot = await _firestore
           .collection('teachers')
@@ -168,8 +203,13 @@ class FirestoreService {
   }
 
   Future<void> updateTeacherDocument(
-      String teacherId, Map<String, dynamic> data) async {
-    await _firestore.collection('teachers').doc(teacherId).set(data, SetOptions(merge: true));
+    String teacherId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('teachers')
+        .doc(teacherId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteTeacherDocument(String teacherId) async {
@@ -182,12 +222,20 @@ class FirestoreService {
   }
 
   Future<void> saveClassDocument(
-      String classId, Map<String, dynamic> data) async {
-    await _firestore.collection('classes').doc(classId).set(data, SetOptions(merge: true));
+    String classId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('classes')
+        .doc(classId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<Map<String, dynamic>?> getClassDocument(String classId) async {
-    final docSnapshot = await _firestore.collection('classes').doc(classId).get();
+    final docSnapshot = await _firestore
+        .collection('classes')
+        .doc(classId)
+        .get();
     if (docSnapshot.exists) {
       return docSnapshot.data();
     }
@@ -195,15 +243,21 @@ class FirestoreService {
   }
 
   Future<void> updateClassDocument(
-      String classId, Map<String, dynamic> data) async {
-    await _firestore.collection('classes').doc(classId).set(data, SetOptions(merge: true));
+    String classId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('classes')
+        .doc(classId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteClassDocument(String classId) async {
     await _firestore.collection('classes').doc(classId).delete();
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getClassesDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getClassesDocuments() async {
     try {
       final snapshot = await _firestore
           .collection('classes')
@@ -216,7 +270,8 @@ class FirestoreService {
     }
   }
 
-  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> streamClassesDocuments() {
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  streamClassesDocuments() {
     return _firestore
         .collection('classes')
         .orderBy('createdAt', descending: true)
@@ -231,19 +286,26 @@ class FirestoreService {
 
   // Attendance Document Methods
   Future<void> saveAttendanceDocument(
-      String attendanceId, Map<String, dynamic> data) async {
+    String attendanceId,
+    Map<String, dynamic> data,
+  ) async {
     await _firestore
         .collection('attendance')
         .doc(attendanceId)
         .set(data, SetOptions(merge: true));
   }
 
-  Future<void> saveAttendanceBatch(List<dynamic> attendanceList, {Map<String, dynamic>? sessionData}) async {
+  Future<void> saveAttendanceBatch(
+    List<dynamic> attendanceList, {
+    Map<String, dynamic>? sessionData,
+  }) async {
     final batch = _firestore.batch();
     if (sessionData != null && attendanceList.isNotEmpty) {
       final classId = attendanceList.first.classId;
       final date = attendanceList.first.date;
-      final sessionRef = _firestore.collection('attendance_sessions').doc('${classId}_$date');
+      final sessionRef = _firestore
+          .collection('attendance_sessions')
+          .doc('${classId}_$date');
       batch.set(sessionRef, sessionData);
     }
     for (var att in attendanceList) {
@@ -261,8 +323,8 @@ class FirestoreService {
     return doc.exists;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAttendanceDocumentsByClassAndDate(
-      String classId, String date) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAttendanceDocumentsByClassAndDate(String classId, String date) async {
     final snapshot = await _firestore
         .collection('attendance')
         .where('classId', isEqualTo: classId)
@@ -271,8 +333,8 @@ class FirestoreService {
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAttendanceDocumentsByClass(
-      String classId) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAttendanceDocumentsByClass(String classId) async {
     final snapshot = await _firestore
         .collection('attendance')
         .where('classId', isEqualTo: classId)
@@ -280,8 +342,8 @@ class FirestoreService {
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAttendanceDocumentsByStudent(
-      String studentId) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAttendanceDocumentsByStudent(String studentId) async {
     final snapshot = await _firestore
         .collection('attendance')
         .where('studentId', isEqualTo: studentId)
@@ -289,18 +351,25 @@ class FirestoreService {
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllAttendanceDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAllAttendanceDocuments() async {
     final snapshot = await _firestore.collection('attendance').get();
     return snapshot.docs;
   }
 
   // Attendance Audit Methods
-  Future<void> saveAttendanceAudit(String auditId, Map<String, dynamic> data) async {
-    await _firestore.collection('attendance_audit').doc(auditId).set(data, SetOptions(merge: true));
+  Future<void> saveAttendanceAudit(
+    String auditId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('attendance_audit')
+        .doc(auditId)
+        .set(data, SetOptions(merge: true));
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAttendanceAuditsForClassAndDate(
-      String classId, String date) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAttendanceAuditsForClassAndDate(String classId, String date) async {
     final snapshot = await _firestore
         .collection('attendance_audit')
         .where('classId', isEqualTo: classId)
@@ -311,7 +380,10 @@ class FirestoreService {
 
   // Fee Document Methods
   Future<void> saveFeeDocument(String feeId, Map<String, dynamic> data) async {
-    await _firestore.collection('fees').doc(feeId).set(data, SetOptions(merge: true));
+    await _firestore
+        .collection('fees')
+        .doc(feeId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<Map<String, dynamic>?> getFeeDocument(String feeId) async {
@@ -322,7 +394,8 @@ class FirestoreService {
     return null;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllFeesDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAllFeesDocuments() async {
     final snapshot = await _firestore.collection('fees').get();
     return snapshot.docs;
   }
@@ -331,19 +404,32 @@ class FirestoreService {
     return _firestore.collection('fee_payments').doc().id;
   }
 
-  Future<void> savePaymentDocument(String paymentId, Map<String, dynamic> data) async {
-    await _firestore.collection('fee_payments').doc(paymentId).set(data, SetOptions(merge: true));
+  Future<void> savePaymentDocument(
+    String paymentId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('fee_payments')
+        .doc(paymentId)
+        .set(data, SetOptions(merge: true));
   }
 
-  Future<void> updatePaymentDocument(String paymentId, Map<String, dynamic> data) async {
-    await _firestore.collection('fee_payments').doc(paymentId).set(data, SetOptions(merge: true));
+  Future<void> updatePaymentDocument(
+    String paymentId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('fee_payments')
+        .doc(paymentId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<void> deletePaymentDocument(String paymentId) async {
     await _firestore.collection('fee_payments').doc(paymentId).delete();
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getPaymentDocumentsForFee(String feeId) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getPaymentDocumentsForFee(String feeId) async {
     final snapshot = await _firestore
         .collection('fee_payments')
         .where('feeId', isEqualTo: feeId)
@@ -351,7 +437,8 @@ class FirestoreService {
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllPaymentDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAllPaymentDocuments() async {
     final snapshot = await _firestore.collection('fee_payments').get();
     return snapshot.docs;
   }
@@ -362,7 +449,9 @@ class FirestoreService {
   }
 
   Future<void> saveHomeworkDocument(
-      String homeworkId, Map<String, dynamic> data) async {
+    String homeworkId,
+    Map<String, dynamic> data,
+  ) async {
     await _firestore
         .collection('homework')
         .doc(homeworkId)
@@ -370,8 +459,13 @@ class FirestoreService {
   }
 
   Future<void> updateHomeworkDocument(
-      String homeworkId, Map<String, dynamic> data) async {
-    await _firestore.collection('homework').doc(homeworkId).set(data, SetOptions(merge: true));
+    String homeworkId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('homework')
+        .doc(homeworkId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteHomeworkDocument(String homeworkId) async {
@@ -379,7 +473,7 @@ class FirestoreService {
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      getAllHomeworkDocuments() async {
+  getAllHomeworkDocuments() async {
     final snapshot = await _firestore
         .collection('homework')
         .orderBy('createdAt', descending: true)
@@ -400,19 +494,35 @@ class FirestoreService {
     return _firestore.collection('tests').doc().id;
   }
 
-  Future<void> saveTestDocument(String testId, Map<String, dynamic> data) async {
-    await _firestore.collection('tests').doc(testId).set(data, SetOptions(merge: true));
+  Future<void> saveTestDocument(
+    String testId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('tests')
+        .doc(testId)
+        .set(data, SetOptions(merge: true));
   }
 
-  Future<void> updateTestDocument(String testId, Map<String, dynamic> data) async {
-    await _firestore.collection('tests').doc(testId).set(data, SetOptions(merge: true));
+  Future<void> updateTestDocument(
+    String testId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('tests')
+        .doc(testId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteTestDocument(String testId) async {
     await _firestore.collection('tests').doc(testId).delete();
   }
 
-  Future<void> updateTestArchiveStatus(String testId, bool isArchived, String? userId) async {
+  Future<void> updateTestArchiveStatus(
+    String testId,
+    bool isArchived,
+    String? userId,
+  ) async {
     await _firestore.collection('tests').doc(testId).update({
       'isArchived': isArchived,
       'archivedAt': isArchived ? FieldValue.serverTimestamp() : null,
@@ -422,7 +532,10 @@ class FirestoreService {
   }
 
   Future<void> deleteTestWithNotification(
-      String testId, Map<String, dynamic> notificationData, String notificationId) async {
+    String testId,
+    Map<String, dynamic> notificationData,
+    String notificationId,
+  ) async {
     final batch = _firestore.batch();
     final notifRef = _firestore.collection('notifications').doc(notificationId);
     batch.set(notifRef, notificationData);
@@ -431,7 +544,8 @@ class FirestoreService {
     await batch.commit();
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllTestDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAllTestDocuments() async {
     final snapshot = await _firestore
         .collection('tests')
         .orderBy('createdAt', descending: true)
@@ -439,7 +553,8 @@ class FirestoreService {
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getTestDocumentsForClass(String classId) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getTestDocumentsForClass(String classId) async {
     final snapshot = await _firestore
         .collection('tests')
         .where('classId', isEqualTo: classId)
@@ -456,8 +571,14 @@ class FirestoreService {
   }
 
   // Mark Document Methods
-  Future<void> saveMarkDocument(String markId, Map<String, dynamic> data) async {
-    await _firestore.collection('marks').doc(markId).set(data, SetOptions(merge: true));
+  Future<void> saveMarkDocument(
+    String markId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('marks')
+        .doc(markId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<void> saveMarksBatch(List<dynamic> marksList) async {
@@ -469,7 +590,10 @@ class FirestoreService {
     await batch.commit();
   }
 
-  Future<void> saveMarksBatchWithAudit(List<dynamic> marksList, List<dynamic> auditsList) async {
+  Future<void> saveMarksBatchWithAudit(
+    List<dynamic> marksList,
+    List<dynamic> auditsList,
+  ) async {
     final batch = _firestore.batch();
     for (var m in marksList) {
       final docRef = _firestore.collection('marks').doc(m.markId);
@@ -482,8 +606,8 @@ class FirestoreService {
     await batch.commit();
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getMarkAuditDocumentsForTest(
-      String testId, {String? classId}) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getMarkAuditDocumentsForTest(String testId, {String? classId}) async {
     Query<Map<String, dynamic>> query = _firestore
         .collection('marks_audit')
         .where('testId', isEqualTo: testId);
@@ -510,8 +634,8 @@ class FirestoreService {
     });
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getMarkDocumentsForTest(
-      String testId, {String? classId}) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getMarkDocumentsForTest(String testId, {String? classId}) async {
     Query<Map<String, dynamic>> query = _firestore
         .collection('marks')
         .where('testId', isEqualTo: testId);
@@ -531,8 +655,8 @@ class FirestoreService {
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getMarkDocumentsForStudent(
-      String studentId, {String? classId}) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getMarkDocumentsForStudent(String studentId, {String? classId}) async {
     Query<Map<String, dynamic>> query = _firestore
         .collection('marks')
         .where('studentId', isEqualTo: studentId);
@@ -564,15 +688,22 @@ class FirestoreService {
     return _firestore.collection('notices').doc().id;
   }
 
-  Future<void> saveNoticeDocument(String noticeId, Map<String, dynamic> data) async {
-    await _firestore.collection('notices').doc(noticeId).set(data, SetOptions(merge: true));
+  Future<void> saveNoticeDocument(
+    String noticeId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('notices')
+        .doc(noticeId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteNoticeDocument(String noticeId) async {
     await _firestore.collection('notices').doc(noticeId).delete();
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllNoticeDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAllNoticeDocuments() async {
     final snapshot = await _firestore
         .collection('notices')
         .orderBy('createdAt', descending: true)
@@ -593,15 +724,22 @@ class FirestoreService {
     return _firestore.collection('complaints').doc().id;
   }
 
-  Future<void> saveComplaintDocument(String complaintId, Map<String, dynamic> data) async {
-    await _firestore.collection('complaints').doc(complaintId).set(data, SetOptions(merge: true));
+  Future<void> saveComplaintDocument(
+    String complaintId,
+    Map<String, dynamic> data,
+  ) async {
+    await _firestore
+        .collection('complaints')
+        .doc(complaintId)
+        .set(data, SetOptions(merge: true));
   }
 
   Future<void> deleteComplaintDocument(String complaintId) async {
     await _firestore.collection('complaints').doc(complaintId).delete();
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getAllComplaintDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getAllComplaintDocuments() async {
     final snapshot = await _firestore
         .collection('complaints')
         .orderBy('createdAt', descending: true)
@@ -609,7 +747,8 @@ class FirestoreService {
     return snapshot.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getComplaintDocumentsForStudent(String studentId) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getComplaintDocumentsForStudent(String studentId) async {
     final snapshot = await _firestore
         .collection('complaints')
         .where('studentId', isEqualTo: studentId)
@@ -618,7 +757,10 @@ class FirestoreService {
   }
 
   Future<Map<String, dynamic>?> getComplaintDocument(String complaintId) async {
-    final doc = await _firestore.collection('complaints').doc(complaintId).get();
+    final doc = await _firestore
+        .collection('complaints')
+        .doc(complaintId)
+        .get();
     if (doc.exists) {
       return doc.data();
     }
@@ -631,7 +773,9 @@ class FirestoreService {
   }
 
   Future<void> saveNotificationDocument(
-      String notificationId, Map<String, dynamic> data) async {
+    String notificationId,
+    Map<String, dynamic> data,
+  ) async {
     await _firestore
         .collection('notifications')
         .doc(notificationId)
@@ -643,11 +787,18 @@ class FirestoreService {
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      getNotificationsDocumentsForRecipient(String recipientId, {String? userRole}) async {
+  getNotificationsDocumentsForRecipient(
+    String recipientId, {
+    String? userRole,
+  }) async {
     final isAdmin = userRole?.toLowerCase() == 'admin';
     final query = isAdmin
-        ? _firestore.collection('notifications').where('recipientRole', isEqualTo: 'admin')
-        : _firestore.collection('notifications').where('recipientId', isEqualTo: recipientId);
+        ? _firestore
+              .collection('notifications')
+              .where('recipientRole', isEqualTo: 'admin')
+        : _firestore
+              .collection('notifications')
+              .where('recipientId', isEqualTo: recipientId);
 
     final snapshot = await query.get();
     final list = snapshot.docs;
@@ -662,11 +813,18 @@ class FirestoreService {
   }
 
   Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      streamNotificationsDocumentsForRecipient(String recipientId, {String? userRole}) {
+  streamNotificationsDocumentsForRecipient(
+    String recipientId, {
+    String? userRole,
+  }) {
     final isAdmin = userRole?.toLowerCase() == 'admin';
     final query = isAdmin
-        ? _firestore.collection('notifications').where('recipientRole', isEqualTo: 'admin')
-        : _firestore.collection('notifications').where('recipientId', isEqualTo: recipientId);
+        ? _firestore
+              .collection('notifications')
+              .where('recipientRole', isEqualTo: 'admin')
+        : _firestore
+              .collection('notifications')
+              .where('recipientId', isEqualTo: recipientId);
 
     return query.snapshots().map((snapshot) {
       final list = snapshot.docs.toList();
@@ -682,9 +840,12 @@ class FirestoreService {
   }
 
   Future<Map<String, dynamic>?> getNotificationDocument(
-      String notificationId) async {
-    final doc =
-        await _firestore.collection('notifications').doc(notificationId).get();
+    String notificationId,
+  ) async {
+    final doc = await _firestore
+        .collection('notifications')
+        .doc(notificationId)
+        .get();
     if (doc.exists) {
       return doc.data();
     }
@@ -701,7 +862,10 @@ class FirestoreService {
   }
 
   Future<void> saveInstituteSettingsDocument(Map<String, dynamic> data) async {
-    await _firestore.collection('settings').doc('app').set(data, SetOptions(merge: true));
+    await _firestore
+        .collection('settings')
+        .doc('app')
+        .set(data, SetOptions(merge: true));
   }
 
   Future<List<String>> getCentralSubjects() async {
@@ -709,11 +873,22 @@ class FirestoreService {
     if (doc.exists) {
       final raw = doc.data()?['subjects'];
       if (raw is List) {
-        final list = raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toSet().toList();
+        final list = raw
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList();
         if (list.isNotEmpty) return list;
       }
     }
-    return ['Mathematics', 'Science', 'English', 'Gujarati', 'Social Science', 'Hindi'];
+    return [
+      'Mathematics',
+      'Science',
+      'English',
+      'Gujarati',
+      'Social Science',
+      'Hindi',
+    ];
   }
 
   Future<void> addCentralSubject(String subjectName) async {
@@ -735,7 +910,9 @@ class FirestoreService {
   }
 
   Future<void> saveHolidayDocument(
-      String holidayId, Map<String, dynamic> data) async {
+    String holidayId,
+    Map<String, dynamic> data,
+  ) async {
     await _firestore
         .collection('holidays')
         .doc(holidayId)
@@ -746,12 +923,17 @@ class FirestoreService {
     await _firestore.collection('holidays').doc(holidayId).delete();
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> getHolidaysDocuments() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getHolidaysDocuments() async {
     final snapshot = await _firestore.collection('holidays').get();
     return snapshot.docs;
   }
 
-  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> streamHolidaysDocuments() {
-    return _firestore.collection('holidays').snapshots().map((snapshot) => snapshot.docs);
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  streamHolidaysDocuments() {
+    return _firestore
+        .collection('holidays')
+        .snapshots()
+        .map((snapshot) => snapshot.docs);
   }
 }
