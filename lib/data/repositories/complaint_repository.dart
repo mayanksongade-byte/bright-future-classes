@@ -20,7 +20,7 @@ class ComplaintRepository {
       );
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw Exception('Permission denied. Only admins can create complaints.');
+        throw Exception('Permission denied. You do not have permission to create this complaint.');
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {
@@ -57,6 +57,23 @@ class ComplaintRepository {
     }
   }
 
+  Future<List<ComplaintModel>> getComplaintsForClasses(List<String> classIds) async {
+    try {
+      final docs = await _firestoreService.getComplaintDocumentsForClasses(classIds);
+      return docs
+          .map((doc) => ComplaintModel.fromMap(doc.data(), doc.id))
+          .toList();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw Exception('Permission denied. Unable to fetch complaints for assigned classes.');
+      }
+      throw Exception('Failed to load complaints: ${e.message}');
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('An unexpected error occurred while loading complaints.');
+    }
+  }
+
   Future<ComplaintModel?> getComplaintById(String complaintId) async {
     try {
       final data = await _firestoreService.getComplaintDocument(complaintId);
@@ -80,7 +97,7 @@ class ComplaintRepository {
       );
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw Exception('Permission denied. Only admins can update complaints.');
+        throw Exception('Permission denied. You do not have permission to update this complaint.');
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {
@@ -97,7 +114,7 @@ class ComplaintRepository {
       await _firestoreService.deleteComplaintDocument(complaintId);
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw Exception('Permission denied. Only admins can delete complaints.');
+        throw Exception('Permission denied. You do not have permission to delete this complaint.');
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {

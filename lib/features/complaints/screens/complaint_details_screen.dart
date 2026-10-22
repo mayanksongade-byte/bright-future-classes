@@ -1,285 +1,51 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/complaint_model.dart';
 import '../../../data/models/student_model.dart';
-import '../../../data/repositories/class_repository.dart';
-import '../../../data/repositories/student_repository.dart';
+import '../../../data/services/firestore_service.dart';
 import '../view_models/complaints_view_model.dart';
-import 'add_edit_complaint_screen.dart';
 
-class ComplaintDetailsScreen extends StatefulWidget {
+class ComplaintDetailsScreen extends StatelessWidget {
   final ComplaintModel complaint;
+  final String userRole;
+  final String? preloadedStudentName;
+  final String? preloadedClassName;
 
-  const ComplaintDetailsScreen({super.key, required this.complaint});
+  const ComplaintDetailsScreen({
+    super.key,
+    required this.complaint,
+    this.userRole = 'admin',
+    this.preloadedStudentName,
+    this.preloadedClassName,
+  });
 
-  @override
-  State<ComplaintDetailsScreen> createState() => _ComplaintDetailsScreenState();
-}
-
-class _ComplaintDetailsScreenState extends State<ComplaintDetailsScreen> {
-  late ComplaintModel _complaint;
-  late final ComplaintsViewModel _viewModel;
-  late final ClassRepository _classRepository;
-  late final StudentRepository _studentRepository;
-
-  String _studentName = 'Loading student...';
-  String _className = 'Loading class...';
-  bool _isLoadingRelated = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _complaint = widget.complaint;
-    _viewModel = ComplaintsViewModel();
-    _viewModel.addListener(_onViewModelChange);
-    _classRepository = ClassRepository();
-    _studentRepository = StudentRepository();
-    _loadRelatedData();
-  }
-
-  void _onViewModelChange() {
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  @override
-  void dispose() {
-    _viewModel.removeListener(_onViewModelChange);
-    _viewModel.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadRelatedData() async {
-    try {
-      final results = await Future.wait([
-        _studentRepository.getStudents(),
-        _classRepository.getClasses(),
-      ]);
-      final students = results[0] as List<StudentModel>;
-      final classes = results[1] as List<ClassModel>;
-
-      final studentMatch = students.firstWhere(
-        (s) => s.studentId == _complaint.studentId,
-        orElse: () => StudentModel(
-          studentId: '',
-          name: 'Student unavailable',
-          phone: '',
-          parentName: '',
-          parentPhone: '',
-        ),
-      );
-
-      final classMatch = classes.firstWhere(
-        (c) => c.classId == _complaint.classId,
-        orElse: () => ClassModel(
-          classId: '',
-          className: 'Class unavailable',
-          standard: '',
-          medium: '',
-          academicYear: '',
-        ),
-      );
-
-      if (mounted) {
-        setState(() {
-          _studentName = studentMatch.name;
-          _className = classMatch.className;
-          _isLoadingRelated = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _studentName = 'Student unavailable';
-          _className = 'Class unavailable';
-          _isLoadingRelated = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _confirmDelete() async {
-    final confirmed = await showDialog<bool>(
+  /// Opens the complaint details as a modal bottom sheet matching Screenshots 3 and 4.
+  static Future<bool?> showComplaintDetailsModal(
+    BuildContext context, {
+    required ComplaintModel complaint,
+    String userRole = 'admin',
+    String? preloadedStudentName,
+    String? preloadedClassName,
+  }) {
+    return showModalBottomSheet<bool>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text(
-            'Delete Complaint?',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textMain,
-            ),
-          ),
-          content: const Text(
-            'Are you sure you want to permanently delete this complaint? This action cannot be undone.',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel',
-                  style: TextStyle(color: AppColors.textSecondary)),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.error,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ComplaintDetailsModal(
+        complaint: complaint,
+        userRole: userRole,
+        preloadedStudentName: preloadedStudentName,
+        preloadedClassName: preloadedClassName,
+      ),
     );
-
-    if (confirmed == true && mounted) {
-      final success = await _viewModel.deleteComplaint(_complaint.complaintId);
-      if (!mounted) return;
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Complaint deleted successfully.'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        Navigator.of(context).pop(true);
-      } else if (_viewModel.errorMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_viewModel.errorMessage!),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _updateStatusAndNote(String newStatus, {String? resolutionNote}) async {
-    final success = await _viewModel.updateComplaint(
-      complaintId: _complaint.complaintId,
-      studentId: _complaint.studentId,
-      classId: _complaint.classId,
-      type: _complaint.type,
-      title: _complaint.title,
-      description: _complaint.description,
-      priority: _complaint.priority,
-      status: newStatus,
-      resolutionNote: resolutionNote ?? _complaint.resolutionNote,
-    );
-
-    if (!mounted) return;
-
-    if (success) {
-      final fresh = await _viewModel.getComplaintById(_complaint.complaintId);
-      if (!mounted) return;
-      if (fresh != null) {
-        setState(() {
-          _complaint = fresh;
-        });
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Status updated to $newStatus.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    }
-  }
-
-  Future<void> _promptResolutionNoteAndResolve() async {
-    final controller = TextEditingController(text: _complaint.resolutionNote);
-    final note = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text('Resolve Complaint'),
-          content: TextField(
-            controller: controller,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              hintText: 'Enter resolution note (e.g., Parent contacted...)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(null),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
-              child: const Text('Resolve'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (!mounted) return;
-
-    if (note != null) {
-      await _updateStatusAndNote('Resolved', resolutionNote: note);
-    }
-  }
-
-  String _formatDate(DateTime? d) {
-    if (d == null) return '-';
-    final datePart = AppDateFormatter.formatDate(d);
-    final timePart = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-    return '$datePart $timePart';
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'open':
-        return AppColors.warning;
-      case 'in review':
-        return AppColors.info;
-      case 'resolved':
-        return AppColors.success;
-      case 'closed':
-        return AppColors.textSecondary;
-      default:
-        return AppColors.textSecondary;
-    }
-  }
-
-  Color _getPriorityColor(String priority) {
-    switch (priority.toLowerCase()) {
-      case 'high':
-        return AppColors.error;
-      case 'medium':
-        return AppColors.warning;
-      case 'low':
-        return AppColors.success;
-      default:
-        return AppColors.textSecondary;
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = _getStatusColor(_complaint.status);
-    final priorityColor = _getPriorityColor(_complaint.priority);
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -288,47 +54,17 @@ class _ComplaintDetailsScreenState extends State<ComplaintDetailsScreen> {
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textMain),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(context).pop(true),
           tooltip: 'Back',
         ),
         title: const Text(
-          'Complaint Details',
+          'Student Complaints',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: AppColors.textMain,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined,
-                color: AppColors.primaryEmerald),
-            onPressed: () async {
-              final updated = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (context) => AddEditComplaintScreen(complaintToEdit: _complaint),
-                ),
-              );
-              if (updated == true) {
-                final fresh = await _viewModel.getComplaintById(_complaint.complaintId);
-                if (fresh != null && mounted) {
-                  setState(() {
-                    _complaint = fresh;
-                  });
-                  _loadRelatedData();
-                }
-              }
-            },
-            tooltip: 'Edit',
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded,
-                color: AppColors.error),
-            onPressed: _confirmDelete,
-            tooltip: 'Delete',
-          ),
-          const SizedBox(width: 8),
-        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: AppColors.border, height: 1),
@@ -336,249 +72,17 @@ class _ComplaintDetailsScreenState extends State<ComplaintDetailsScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.all(20),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 800),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 1. Complaint Title & Status
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _complaint.title,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textMain,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            _complaint.status.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: statusColor,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // 3. Priority & 6. Complaint Type
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.lightEmerald,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            _complaint.type.toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primaryEmerald,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: priorityColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${_complaint.priority} Priority',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: priorityColor,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    const Divider(height: 1, color: AppColors.border),
-                    const SizedBox(height: 16),
-
-                    // 4. Student & 5. Class
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildInfoTile(
-                            label: 'Student',
-                            value: _isLoadingRelated ? 'Loading...' : _studentName,
-                            icon: Icons.person_outline_rounded,
-                          ),
-                        ),
-                        Expanded(
-                          child: _buildInfoTile(
-                            label: 'Class',
-                            value: _isLoadingRelated ? 'Loading...' : _className,
-                            icon: Icons.school_outlined,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    // 7. Description
-                    const Text(
-                      'Description',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _complaint.description,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: AppColors.textMain,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // 8. Resolution Note (when available)
-                    if (_complaint.resolutionNote.isNotEmpty) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: AppColors.lightEmerald.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.primaryEmerald.withValues(alpha: 0.3)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Resolution Note',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.darkEmerald,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _complaint.resolutionNote,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: AppColors.textMain,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-
-                    // 9, 10, 11. Metadata
-                    Text(
-                      'Created By: ${_complaint.createdBy} (${_complaint.createdByRole})',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Created At: ${_formatDate(_complaint.createdAt)}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Updated At: ${_formatDate(_complaint.updatedAt)}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-
-                    const SizedBox(height: 28),
-
-                    // Status Workflow Action Buttons
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (_complaint.status == 'Open') ...[
-                          OutlinedButton.icon(
-                            onPressed: () => _updateStatusAndNote('In Review'),
-                            icon: const Icon(Icons.rate_review_outlined, size: 16),
-                            label: const Text('Mark In Review'),
-                          ),
-                        ],
-                        if (_complaint.status == 'In Review') ...[
-                          ElevatedButton.icon(
-                            onPressed: _promptResolutionNoteAndResolve,
-                            style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, foregroundColor: Colors.white),
-                            icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
-                            label: const Text('Resolve'),
-                          ),
-                        ],
-                        if (_complaint.status == 'Resolved') ...[
-                          OutlinedButton.icon(
-                            onPressed: () => _updateStatusAndNote('Closed'),
-                            icon: const Icon(Icons.lock_outline_rounded, size: 16),
-                            label: const Text('Close'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: () => _updateStatusAndNote('Open'),
-                            icon: const Icon(Icons.refresh_rounded, size: 16),
-                            label: const Text('Reopen'),
-                          ),
-                        ],
-                        if (_complaint.status == 'Closed') ...[
-                          OutlinedButton.icon(
-                            onPressed: () => _updateStatusAndNote('Open'),
-                            icon: const Icon(Icons.refresh_rounded, size: 16),
-                            label: const Text('Reopen'),
-                          ),
-                        ],
-                        OutlinedButton.icon(
-                          onPressed: _confirmDelete,
-                          style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
-                          icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                          label: const Text('Delete'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              child: ComplaintDetailsContent(
+                complaint: complaint,
+                userRole: userRole,
+                preloadedStudentName: preloadedStudentName,
+                preloadedClassName: preloadedClassName,
+                isModal: false,
               ),
             ),
           ),
@@ -586,51 +90,739 @@ class _ComplaintDetailsScreenState extends State<ComplaintDetailsScreen> {
       ),
     );
   }
+}
 
-  Widget _buildInfoTile({
-    required String label,
-    required String value,
-    required IconData icon,
-  }) {
+class ComplaintDetailsModal extends StatelessWidget {
+  final ComplaintModel complaint;
+  final String userRole;
+  final String? preloadedStudentName;
+  final String? preloadedClassName;
+
+  const ComplaintDetailsModal({
+    super.key,
+    required this.complaint,
+    this.userRole = 'admin',
+    this.preloadedStudentName,
+    this.preloadedClassName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.9,
       ),
-      child: Row(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            top: 12,
+            left: 20,
+            right: 20,
+          ),
+          child: ComplaintDetailsContent(
+            complaint: complaint,
+            userRole: userRole,
+            preloadedStudentName: preloadedStudentName,
+            preloadedClassName: preloadedClassName,
+            isModal: true,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ComplaintDetailsContent extends StatefulWidget {
+  final ComplaintModel complaint;
+  final String userRole;
+  final String? preloadedStudentName;
+  final String? preloadedClassName;
+  final bool isModal;
+
+  const ComplaintDetailsContent({
+    super.key,
+    required this.complaint,
+    this.userRole = 'admin',
+    this.preloadedStudentName,
+    this.preloadedClassName,
+    this.isModal = false,
+  });
+
+  @override
+  State<ComplaintDetailsContent> createState() => _ComplaintDetailsContentState();
+}
+
+class _ComplaintDetailsContentState extends State<ComplaintDetailsContent> {
+  late ComplaintModel _complaint;
+  late final ComplaintsViewModel _viewModel;
+  final FirestoreService _firestoreService = FirestoreService();
+
+  final TextEditingController _actionNotesController = TextEditingController();
+  final TextEditingController _studentResponseController = TextEditingController();
+
+  StudentModel? _student;
+  ClassModel? _classModel;
+  bool _isLoadingDetails = true;
+  bool _hasMutated = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _complaint = widget.complaint;
+    _actionNotesController.text = _complaint.resolutionNote;
+    _viewModel = ComplaintsViewModel();
+    _viewModel.addListener(_onViewModelChange);
+
+    _loadRelatedModels();
+  }
+
+  void _onViewModelChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _viewModel.removeListener(_onViewModelChange);
+    _viewModel.dispose();
+    _actionNotesController.dispose();
+    _studentResponseController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadRelatedModels() async {
+    setState(() => _isLoadingDetails = true);
+    try {
+      final fresh = await _viewModel.getComplaintById(_complaint.complaintId);
+      if (fresh != null) {
+        _complaint = fresh;
+        if (_actionNotesController.text.isEmpty && _complaint.resolutionNote.isNotEmpty) {
+          _actionNotesController.text = _complaint.resolutionNote;
+        }
+      }
+
+      // Targeted single-document get: avoids collection-wide queries that fail Teacher security rules
+      if (_complaint.studentId.isNotEmpty) {
+        final studentDoc = await _firestoreService.getStudentDocument(_complaint.studentId);
+        if (studentDoc != null) {
+          _student = StudentModel.fromMap(studentDoc, _complaint.studentId);
+        }
+      }
+
+      if (_complaint.classId.isNotEmpty) {
+        final classDoc = await _firestoreService.getClassDocument(_complaint.classId);
+        if (classDoc != null) {
+          _classModel = ClassModel.fromMap(classDoc, _complaint.classId);
+        } else {
+          _classModel = ClassModel(
+            classId: _complaint.classId,
+            className: _complaint.classId,
+            standard: '',
+            medium: '',
+            academicYear: '',
+          );
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ComplaintDetails] Error loading details: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingDetails = false);
+    }
+  }
+
+  Future<void> _handleMarkResolved() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final userDoc = await _firestoreService.getUserDocument(user.uid);
+    final userName = userDoc?['name'] as String? ?? user.displayName ?? 'Staff';
+    final role = (userDoc?['role'] as String? ?? widget.userRole).toLowerCase();
+
+    final success = await _viewModel.resolveComplaint(
+      complaintId: _complaint.complaintId,
+      resolutionNote: _actionNotesController.text.trim(),
+      resolvedBy: userName,
+      resolvedByRole: role,
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      _hasMutated = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Complaint marked as resolved.'),
+          backgroundColor: AppColors.primaryEmerald,
+        ),
+      );
+      await _loadRelatedModels();
+    } else if (_viewModel.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_viewModel.errorMessage!), backgroundColor: AppColors.error),
+      );
+    }
+  }
+
+  Future<void> _handleSubmitStudentResponse() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final text = _studentResponseController.text.trim();
+    if (text.isEmpty) return;
+
+    final userDoc = await _firestoreService.getUserDocument(user.uid);
+    final studentName = userDoc?['name'] as String? ?? _student?.name ?? 'Student';
+
+    final success = await _viewModel.submitStudentResponse(
+      complaintId: _complaint.complaintId,
+      responseText: text,
+      studentUid: user.uid,
+      studentName: studentName,
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      _hasMutated = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Response submitted successfully.'),
+          backgroundColor: AppColors.primaryEmerald,
+        ),
+      );
+      _studentResponseController.clear();
+      await _loadRelatedModels();
+    } else if (_viewModel.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_viewModel.errorMessage!), backgroundColor: AppColors.error),
+      );
+    }
+  }
+
+  Future<void> _handleAcknowledge() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final userDoc = await _firestoreService.getUserDocument(user.uid);
+    final studentName = userDoc?['name'] as String? ?? _student?.name ?? 'Student';
+
+    final success = await _viewModel.acknowledgeComplaint(
+      complaintId: _complaint.complaintId,
+      studentUid: user.uid,
+      studentName: studentName,
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      _hasMutated = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Complaint acknowledged.'),
+          backgroundColor: AppColors.primaryEmerald,
+        ),
+      );
+      await _loadRelatedModels();
+    } else if (_viewModel.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_viewModel.errorMessage!), backgroundColor: AppColors.error),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isStudent = widget.userRole == 'student';
+    final isResolved = _complaint.status.toLowerCase() == 'resolved';
+
+    Color statusBg = const Color(0xFFFEF3C7);
+    Color statusText = AppColors.warning;
+    String statusLabel = _complaint.status;
+
+    if (isResolved) {
+      statusBg = const Color(0xFFDCFCE7);
+      statusText = AppColors.darkEmerald;
+      statusLabel = '✓ Resolved';
+    } else if (_complaint.status.toLowerCase() == 'open') {
+      statusBg = const Color(0xFFFEE2E2);
+      statusText = AppColors.error;
+      statusLabel = 'Open';
+    } else {
+      statusBg = const Color(0xFFFEF3C7);
+      statusText = AppColors.warning;
+      statusLabel = 'Under Review';
+    }
+
+    Color priorityColor = AppColors.warning;
+    if (_complaint.priority.toLowerCase() == 'high') {
+      priorityColor = AppColors.error;
+    } else if (_complaint.priority.toLowerCase() == 'low') {
+      priorityColor = AppColors.darkEmerald;
+    }
+
+    final reportedDateStr = _complaint.createdAt != null
+        ? '${_complaint.createdAt!.day} ${_monthName(_complaint.createdAt!.month)} ${_complaint.createdAt!.year}'
+        : 'N/A';
+
+    final resolvedDateStr = _complaint.resolvedAt != null
+        ? '${_complaint.resolvedAt!.day} ${_monthName(_complaint.resolvedAt!.month)} ${_complaint.resolvedAt!.year}'
+        : '';
+
+    final displayStudentName = _student?.name ?? widget.preloadedStudentName ?? 'Student';
+    final displayClassName = _classModel?.className ?? widget.preloadedClassName ?? 'Class';
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          Navigator.of(context).pop(_hasMutated);
+        }
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: AppColors.primaryEmerald),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
-                  ),
+          // Drag Handle Pill for Modal (Screenshots 3 & 4)
+          if (widget.isModal) ...[
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textMain,
+              ),
+            ),
+          ],
+
+          if (_isLoadingDetails) ...[
+            const LinearProgressIndicator(color: AppColors.primaryEmerald),
+            const SizedBox(height: 12),
+          ],
+
+        // 1. STUDENT HEADER & STATUS BADGE (Screenshots 3 & 4)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    displayStudentName,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textMain,
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  const SizedBox(height: 2),
+                  Text(
+                    displayClassName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: statusBg,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                statusLabel,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: statusText,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // 2. COMPLAINT SUMMARY CARD (Screenshots 3 & 4)
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _complaint.title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textMain,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _buildMetaRow('Category', _complaint.type, isBoldValue: true),
+              const SizedBox(height: 8),
+              _buildMetaRow(
+                'Incident Date',
+                _complaint.incidentDate.isNotEmpty ? _complaint.incidentDate : reportedDateStr,
+              ),
+              const SizedBox(height: 8),
+              _buildMetaRow(
+                'Priority',
+                _complaint.priority,
+                valueColor: priorityColor,
+                isBoldValue: true,
+              ),
+              const SizedBox(height: 8),
+              _buildMetaRow('Reported Date', reportedDateStr),
+              if (isResolved && resolvedDateStr.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _buildMetaRow('Resolved Date', resolvedDateStr),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // 3. DESCRIPTION SECTION (Screenshots 3 & 4)
+        const Text(
+          'Description',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textMain,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Text(
+            _complaint.description,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textMain,
+              height: 1.4,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // 4. ACTION TAKEN SECTION (Screenshots 3 & 4)
+        if (_complaint.resolutionNote.isNotEmpty) ...[
+          const Text(
+            'Action Taken',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textMain,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.lightEmerald,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.primaryEmerald.withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              _complaint.resolutionNote,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.darkEmerald,
+                height: 1.4,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+
+        // 5. ACTIVITY HISTORY SECTION (Screenshots 3 & 4)
+        const Text(
+          'Activity History',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textMain,
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        _complaint.activityHistory.isEmpty
+            ? Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle_outline_rounded,
+                      color: AppColors.primaryEmerald,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Complaint reported ($reportedDateStr)',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMain,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _complaint.activityHistory.length,
+                separatorBuilder: (context, idx) => const SizedBox(height: 10),
+                itemBuilder: (context, idx) {
+                  final item = _complaint.activityHistory[idx];
+                  final eventText = item['event'] as String? ?? '';
+                  return Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle_outline_rounded,
+                        color: AppColors.primaryEmerald,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          eventText,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMain,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+        const SizedBox(height: 24),
+
+        // 6. RESOLUTION BANNER (Screenshot 4 for Resolved State)
+        if (isResolved) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.lightEmerald,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.primaryEmerald.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: AppColors.primaryEmerald,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check_rounded, color: Colors.white, size: 16),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Resolved on ${resolvedDateStr.isNotEmpty ? resolvedDateStr : reportedDateStr}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.darkEmerald,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 20),
         ],
-      ),
+
+        // 7. ADMIN / TEACHER ACTION SECTION (Screenshot 3 for Unresolved State)
+        if (!isStudent && !isResolved) ...[
+          const Text(
+            'Action Taken Notes (Optional)',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _actionNotesController,
+            maxLines: 2,
+            decoration: InputDecoration(
+              hintText: 'Enter notes e.g. Spoke with student and parent...',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              contentPadding: const EdgeInsets.all(14),
+            ),
+            style: const TextStyle(fontSize: 13, color: AppColors.textMain),
+          ),
+          const SizedBox(height: 16),
+          PrimaryButton(
+            text: 'Mark Resolved',
+            isLoading: _viewModel.isSaving,
+            onPressed: _viewModel.isSaving ? null : _handleMarkResolved,
+          ),
+          const SizedBox(height: 20),
+        ],
+
+        // 8. STUDENT RESPONSE & ACKNOWLEDGEMENT SECTION
+        if (isStudent) ...[
+          if (_complaint.studentResponse != null && _complaint.studentResponse!.isNotEmpty) ...[
+            const Text(
+              'Your Submitted Response',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textMain),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Text(
+                _complaint.studentResponse!,
+                style: const TextStyle(fontSize: 13, color: AppColors.textMain, height: 1.4),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ] else if (!isResolved) ...[
+            const Text(
+              'Your Response',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textMain),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _studentResponseController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Explain your side of the incident...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.all(14),
+              ),
+              style: const TextStyle(fontSize: 13, color: AppColors.textMain),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _viewModel.isSaving ? null : _handleSubmitStudentResponse,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryEmerald,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('Submit Response', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+          if (_complaint.isAcknowledged) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.lightEmerald,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.check_circle_rounded, color: AppColors.primaryEmerald, size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'You have acknowledged this complaint.',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.darkEmerald),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ] else ...[
+            const Text(
+              'Acknowledgement confirms you have read this complaint. It does not mean you admit the allegation is true.',
+              style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _viewModel.isSaving ? null : _handleAcknowledge,
+                icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                label: const Text('Acknowledge Complaint'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryEmerald,
+                  side: const BorderSide(color: AppColors.primaryEmerald),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ],
+      ],
+    ),
+  );
+  }
+
+  Widget _buildMetaRow(String label, String value, {Color? valueColor, bool isBoldValue = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isBoldValue ? FontWeight.w700 : FontWeight.w600,
+            color: valueColor ?? AppColors.textMain,
+          ),
+        ),
+      ],
     );
+  }
+
+  String _monthName(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (month >= 1 && month <= 12) return months[month - 1];
+    return '';
   }
 }

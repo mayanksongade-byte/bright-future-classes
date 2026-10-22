@@ -343,12 +343,19 @@ service cloud.firestore {
       allow read, write: if isActiveAdmin();
     }
 
-    // Complaints Collection: Active Admin can manage complaints; Assigned teachers and student owners can read/create/update
+    // Complaints Collection: Active Admin can manage all; Teachers can list/create/update for their classes; Students can list/read/update their own
     match /complaints/{complaintId} {
-      allow read: if request.auth != null && (
+      // Single document get: check classId/studentId from resource
+      allow get: if request.auth != null && (
         isActiveAdmin()
         || (resource != null && resource.data.get('classId', '') != '' && isAssignedTeacher(resource.data.classId))
         || (resource != null && isStudentOwner(resource.data.get('studentId', '')))
+      );
+      // Collection list queries: allow teachers (ViewModel constrains query to their classIds) and students (ViewModel constrains to their studentId)
+      allow list: if request.auth != null && (
+        isActiveAdmin()
+        || isTeacher()
+        || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['student', 'Student', 'STUDENT']
       );
       allow create: if request.auth != null && (
         isActiveAdmin()
@@ -371,7 +378,11 @@ service cloud.firestore {
           && request.resource.data.get('studentId', '') == resource.data.studentId
         )
       );
-      allow delete: if isActiveAdmin();
+      allow delete: if request.auth != null && (
+        isActiveAdmin()
+        || (resource != null && resource.data.get('createdBy', '') == request.auth.uid)
+        || (resource != null && resource.data.get('classId', '') != '' && isAssignedTeacher(resource.data.classId))
+      );
     }
 
     // Notifications Collection

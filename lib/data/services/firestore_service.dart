@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class FirestoreService {
@@ -754,6 +755,48 @@ class FirestoreService {
         .where('studentId', isEqualTo: studentId)
         .get();
     return snapshot.docs;
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getComplaintDocumentsForClass(String classId) async {
+    final snapshot = await _firestore
+        .collection('complaints')
+        .where('classId', isEqualTo: classId)
+        .get();
+    return snapshot.docs;
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getComplaintDocumentsForClasses(List<String> classIds) async {
+    if (classIds.isEmpty) return [];
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> allDocs = [];
+    final Set<String> seenIds = {};
+    dynamic firstOrLastError;
+    int successCount = 0;
+
+    for (final classId in classIds) {
+      final cleanId = classId.trim();
+      if (cleanId.isEmpty) continue;
+      try {
+        final docs = await getComplaintDocumentsForClass(cleanId);
+        successCount++;
+        for (final doc in docs) {
+          if (seenIds.add(doc.id)) {
+            allDocs.add(doc);
+          }
+        }
+      } catch (e) {
+        firstOrLastError ??= e;
+        debugPrint('[FirestoreService] Error fetching complaint documents for classId "$cleanId": $e');
+      }
+    }
+
+    // Only throw if EVERY query attempt failed and no docs were retrieved
+    if (successCount == 0 && firstOrLastError != null) {
+      throw firstOrLastError;
+    }
+
+    return allDocs;
   }
 
   Future<Map<String, dynamic>?> getComplaintDocument(String complaintId) async {
