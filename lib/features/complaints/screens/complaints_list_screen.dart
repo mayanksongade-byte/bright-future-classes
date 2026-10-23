@@ -531,16 +531,17 @@ class _ComplaintsListScreenState extends State<ComplaintsListScreen> {
                               ],
                             ),
                           ),
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.error),
-                                SizedBox(width: 8),
-                                Text('Delete', style: TextStyle(fontSize: 13, color: AppColors.error)),
-                              ],
+                          if (_canDeleteComplaint(complaint))
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.error),
+                                  SizedBox(width: 8),
+                                  Text('Delete', style: TextStyle(fontSize: 13, color: AppColors.error)),
+                                ],
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ],
@@ -548,7 +549,45 @@ class _ComplaintsListScreenState extends State<ComplaintsListScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+
+            // Creator Info Label
+            Row(
+              children: [
+                const Icon(Icons.person_outline_rounded, size: 13, color: AppColors.textSecondary),
+                const SizedBox(width: 4),
+                Text(
+                  complaint.createdByRole.toLowerCase() == 'admin'
+                      ? 'Created by Admin: ${complaint.createdByName.isNotEmpty ? complaint.createdByName : 'Admin'}'
+                      : 'Reported by: ${complaint.createdByName.isNotEmpty ? complaint.createdByName : 'Teacher'}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+            if (complaint.status.toLowerCase() == 'resolved') ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.check_circle_outline_rounded, size: 13, color: AppColors.darkEmerald),
+                  const SizedBox(width: 4),
+                  Text(
+                    complaint.resolvedByName != null && complaint.resolvedByName!.isNotEmpty
+                        ? 'Resolved by ${complaint.resolvedByName} (${complaint.resolvedByRole != null && complaint.resolvedByRole!.isNotEmpty ? complaint.resolvedByRole!.toUpperCase() : "Staff"})'
+                        : 'Resolved (Resolution details unavailable)',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.darkEmerald,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
 
             // Complaint Title
             Text(
@@ -639,5 +678,22 @@ class _ComplaintsListScreenState extends State<ComplaintsListScreen> {
         );
       },
     );
+  }
+
+  bool _canDeleteComplaint(ComplaintModel complaint) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    if (_userRole == 'admin') return true;
+
+    if (_userRole == 'teacher') {
+      final isCreatorUid = complaint.createdBy == user.uid;
+      final isCreatorDoc = complaint.createdBy.isNotEmpty &&
+          (complaint.createdBy == user.uid ||
+           complaint.createdByName.trim().toLowerCase() == user.displayName?.trim().toLowerCase());
+      return isCreatorUid || isCreatorDoc;
+    }
+
+    return false;
   }
 }

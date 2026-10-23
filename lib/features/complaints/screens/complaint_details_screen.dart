@@ -238,6 +238,24 @@ class _ComplaintDetailsContentState extends State<ComplaintDetailsContent> {
     }
   }
 
+  bool get _canResolveComplaint {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    final role = widget.userRole.toLowerCase();
+
+    if (role == 'admin') return true;
+
+    if (role == 'teacher') {
+      final isCreatorUid = _complaint.createdBy == user.uid;
+      final isCreatorDoc = _complaint.createdBy.isNotEmpty &&
+          (_complaint.createdBy == user.uid ||
+           _complaint.createdByName.trim().toLowerCase() == user.displayName?.trim().toLowerCase());
+      return isCreatorUid || isCreatorDoc;
+    }
+
+    return false;
+  }
+
   Future<void> _handleMarkResolved() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -481,6 +499,14 @@ class _ComplaintDetailsContentState extends State<ComplaintDetailsContent> {
               _buildMetaRow('Category', _complaint.type, isBoldValue: true),
               const SizedBox(height: 8),
               _buildMetaRow(
+                'Reported By',
+                _complaint.createdByRole.toLowerCase() == 'admin'
+                    ? 'Admin: ${_complaint.createdByName.isNotEmpty ? _complaint.createdByName : 'Admin'}'
+                    : 'Teacher: ${_complaint.createdByName.isNotEmpty ? _complaint.createdByName : 'Teacher'}',
+                isBoldValue: true,
+              ),
+              const SizedBox(height: 8),
+              _buildMetaRow(
                 'Incident Date',
                 _complaint.incidentDate.isNotEmpty ? _complaint.incidentDate : reportedDateStr,
               ),
@@ -493,9 +519,22 @@ class _ComplaintDetailsContentState extends State<ComplaintDetailsContent> {
               ),
               const SizedBox(height: 8),
               _buildMetaRow('Reported Date', reportedDateStr),
-              if (isResolved && resolvedDateStr.isNotEmpty) ...[
+              if (isResolved) ...[
                 const SizedBox(height: 8),
-                _buildMetaRow('Resolved Date', resolvedDateStr),
+                _buildMetaRow(
+                  'Resolved By',
+                  _complaint.resolvedByName != null && _complaint.resolvedByName!.isNotEmpty
+                      ? _complaint.resolvedByName!
+                      : 'Resolution details unavailable',
+                  isBoldValue: true,
+                  valueColor: AppColors.darkEmerald,
+                ),
+                if (_complaint.resolvedByRole != null && _complaint.resolvedByRole!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _buildMetaRow('Role', _complaint.resolvedByRole!.toUpperCase(), valueColor: AppColors.darkEmerald),
+                ],
+                const SizedBox(height: 8),
+                _buildMetaRow('Resolved On', resolvedDateStr.isNotEmpty ? resolvedDateStr : reportedDateStr),
               ],
             ],
           ),
@@ -659,9 +698,11 @@ class _ComplaintDetailsContentState extends State<ComplaintDetailsContent> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Resolved on ${resolvedDateStr.isNotEmpty ? resolvedDateStr : reportedDateStr}',
+                    _complaint.resolvedByName != null && _complaint.resolvedByName!.isNotEmpty
+                        ? 'Resolved by ${_complaint.resolvedByName} (${_complaint.resolvedByRole?.toUpperCase() ?? "STAFF"}) on ${resolvedDateStr.isNotEmpty ? resolvedDateStr : reportedDateStr}'
+                        : 'Resolved on ${resolvedDateStr.isNotEmpty ? resolvedDateStr : reportedDateStr}',
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: AppColors.darkEmerald,
                     ),
@@ -675,27 +716,43 @@ class _ComplaintDetailsContentState extends State<ComplaintDetailsContent> {
 
         // 7. ADMIN / TEACHER ACTION SECTION (Screenshot 3 for Unresolved State)
         if (!isStudent && !isResolved) ...[
-          const Text(
-            'Action Taken Notes (Optional)',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _actionNotesController,
-            maxLines: 2,
-            decoration: InputDecoration(
-              hintText: 'Enter notes e.g. Spoke with student and parent...',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              contentPadding: const EdgeInsets.all(14),
+          if (_canResolveComplaint) ...[
+            const Text(
+              'Action Taken Notes (Optional)',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
             ),
-            style: const TextStyle(fontSize: 13, color: AppColors.textMain),
-          ),
-          const SizedBox(height: 16),
-          PrimaryButton(
-            text: 'Mark Resolved',
-            isLoading: _viewModel.isSaving,
-            onPressed: _viewModel.isSaving ? null : _handleMarkResolved,
-          ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _actionNotesController,
+              maxLines: 2,
+              decoration: InputDecoration(
+                hintText: 'Enter notes e.g. Spoke with student and parent...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.all(14),
+              ),
+              style: const TextStyle(fontSize: 13, color: AppColors.textMain),
+            ),
+            const SizedBox(height: 16),
+            PrimaryButton(
+              text: 'Mark Resolved',
+              isLoading: _viewModel.isSaving,
+              onPressed: _viewModel.isSaving ? null : _handleMarkResolved,
+            ),
+          ] else ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Text(
+                'Only the reporting teacher (${_complaint.createdByName.isNotEmpty ? _complaint.createdByName : "Creator"}) or an Admin can resolve this complaint.',
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
         ],
 

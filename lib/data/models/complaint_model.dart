@@ -15,6 +15,9 @@ class ComplaintModel {
   final String createdByRole;
   final String incidentDate; // e.g. "2026-10-05"
   final DateTime? resolvedAt;
+  final String? resolvedById;
+  final String? resolvedByName;
+  final String? resolvedByRole;
   final bool isAcknowledged;
   final DateTime? acknowledgedAt;
   final String? studentResponse;
@@ -41,6 +44,9 @@ class ComplaintModel {
     this.createdByRole = 'admin',
     this.incidentDate = '',
     this.resolvedAt,
+    this.resolvedById,
+    this.resolvedByName,
+    this.resolvedByRole,
     this.isAcknowledged = false,
     this.acknowledgedAt,
     this.studentResponse,
@@ -124,6 +130,9 @@ class ComplaintModel {
       createdByRole: map['createdByRole'] as String? ?? 'admin',
       incidentDate: map['incidentDate'] as String? ?? '',
       resolvedAt: parsedResolvedAt,
+      resolvedById: map['resolvedById'] as String?,
+      resolvedByName: map['resolvedByName'] as String?,
+      resolvedByRole: map['resolvedByRole'] as String?,
       isAcknowledged: map['isAcknowledged'] as bool? ?? false,
       acknowledgedAt: parsedAcknowledgedAt,
       studentResponse: map['studentResponse'] as String?,
@@ -153,6 +162,9 @@ class ComplaintModel {
       'createdByRole': createdByRole,
       'incidentDate': incidentDate,
       'resolvedAt': resolvedAt != null ? Timestamp.fromDate(resolvedAt!) : null,
+      'resolvedById': resolvedById,
+      'resolvedByName': resolvedByName,
+      'resolvedByRole': resolvedByRole,
       'isAcknowledged': isAcknowledged,
       'acknowledgedAt': acknowledgedAt != null ? Timestamp.fromDate(acknowledgedAt!) : null,
       'studentResponse': studentResponse,
@@ -183,6 +195,9 @@ class ComplaintModel {
     String? createdByRole,
     String? incidentDate,
     DateTime? resolvedAt,
+    String? resolvedById,
+    String? resolvedByName,
+    String? resolvedByRole,
     bool? isAcknowledged,
     DateTime? acknowledgedAt,
     String? studentResponse,
@@ -209,6 +224,9 @@ class ComplaintModel {
       createdByRole: createdByRole ?? this.createdByRole,
       incidentDate: incidentDate ?? this.incidentDate,
       resolvedAt: resolvedAt ?? this.resolvedAt,
+      resolvedById: resolvedById ?? this.resolvedById,
+      resolvedByName: resolvedByName ?? this.resolvedByName,
+      resolvedByRole: resolvedByRole ?? this.resolvedByRole,
       isAcknowledged: isAcknowledged ?? this.isAcknowledged,
       acknowledgedAt: acknowledgedAt ?? this.acknowledgedAt,
       studentResponse: studentResponse ?? this.studentResponse,

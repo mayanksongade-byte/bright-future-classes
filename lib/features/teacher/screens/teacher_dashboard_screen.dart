@@ -371,18 +371,6 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
           );
         },
       },
-      {
-        'title': 'Notifications',
-        'subtitle': 'Staff notices & alerts',
-        'icon': Icons.notifications_none_rounded,
-        'action': () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => const TeacherNotificationsScreen(),
-            ),
-          );
-        },
-      },
     ];
 
     return GridView.builder(

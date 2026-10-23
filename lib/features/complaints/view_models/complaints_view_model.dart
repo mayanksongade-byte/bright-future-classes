@@ -474,12 +474,17 @@ class ComplaintsViewModel extends ChangeNotifier {
       );
 
       await _complaintRepository.createComplaint(complaint);
+      if (kDebugMode) {
+        debugPrint('[COMPLAINT_SAVE_SUCCESS] Complaint ID: $complaintId');
+      }
 
+      final targetStudent = _students.firstWhere(
+        (s) => s.studentId == studentId,
+        orElse: () => StudentModel(studentId: studentId, name: '', phone: '', parentName: '', parentPhone: ''),
+      );
+
+      // 1. Student Notification (isolated)
       try {
-        final targetStudent = _students.firstWhere(
-          (s) => s.studentId == studentId,
-          orElse: () => StudentModel(studentId: studentId, name: '', phone: '', parentName: '', parentPhone: ''),
-        );
         final notifId = 'notif_complaint_${DateTime.now().millisecondsSinceEpoch}';
         final notification = NotificationModel(
           notificationId: notifId,
@@ -493,7 +498,52 @@ class ComplaintsViewModel extends ChangeNotifier {
           isRead: false,
         );
         await _notificationRepository.createNotification(notification);
-      } catch (_) {}
+        if (kDebugMode) {
+          debugPrint('[STUDENT_NOTIFICATION_WRITE_SUCCESS] Student notification created for ${targetStudent.studentId}');
+        }
+      } catch (studentNotifErr) {
+        if (kDebugMode) {
+          debugPrint('[STUDENT_NOTIFICATION_WRITE_FAILED] Error: $studentNotifErr');
+        }
+      }
+
+      // 2. Admin Notification (isolated)
+      if (createdByRole.toLowerCase() == 'teacher') {
+        if (kDebugMode) {
+          debugPrint('[ADMIN_NOTIFICATION_START] Creating admin notification for complaint: $complaintId');
+        }
+        try {
+          final adminNotifId = 'notif_admin_comp_${DateTime.now().millisecondsSinceEpoch}';
+          final studentName = targetStudent.name.isNotEmpty ? targetStudent.name : 'Student';
+          final nowStr = '${now.day} ${_monthName(now.month)} ${now.year} at ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+          
+          final adminNotification = NotificationModel(
+            notificationId: adminNotifId,
+            recipientId: 'admin',
+            recipientRole: 'admin',
+            title: 'New Teacher Complaint',
+            message: 'Teacher $createdByName filed a complaint regarding $studentName: "$cleanTitle" ($nowStr).',
+            type: 'complaint_created',
+            referenceId: complaintId,
+            referenceType: 'complaint',
+            isRead: false,
+          );
+
+          if (kDebugMode) {
+            debugPrint('[ADMIN_NOTIFICATION_PAYLOAD_READY] Payload recipientRole: ${adminNotification.recipientRole}, refType: ${adminNotification.referenceType}');
+          }
+
+          await _notificationRepository.createNotification(adminNotification);
+
+          if (kDebugMode) {
+            debugPrint('[ADMIN_NOTIFICATION_WRITE_SUCCESS] Admin notification written to Firestore successfully! ID: $adminNotifId');
+          }
+        } catch (adminNotifErr) {
+          if (kDebugMode) {
+            debugPrint('[ADMIN_NOTIFICATION_WRITE_FAILED] Error creating admin notification: $adminNotifErr');
+          }
+        }
+      }
 
       _successMessage = 'Complaint submitted successfully.';
       _isSaving = false;
@@ -610,15 +660,20 @@ class ComplaintsViewModel extends ChangeNotifier {
 
       final history = List<Map<String, dynamic>>.from(existing.activityHistory);
       history.add({
-        'event': 'Resolved ($todayFormatted)',
+        'event': 'Resolved by $resolvedBy (${resolvedByRole.toUpperCase()}) on $todayFormatted',
         'timestamp': now.toIso8601String(),
         'by': resolvedBy,
       });
+
+      final currentUser = FirebaseAuth.instance.currentUser;
 
       final updated = existing.copyWith(
         status: 'Resolved',
         resolutionNote: cleanNote.isNotEmpty ? cleanNote : existing.resolutionNote,
         resolvedAt: now,
+        resolvedById: currentUser?.uid,
+        resolvedByName: resolvedBy,
+        resolvedByRole: resolvedByRole,
         activityHistory: history,
         updatedAt: now,
       );

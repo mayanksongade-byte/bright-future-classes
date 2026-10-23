@@ -368,20 +368,37 @@ service cloud.firestore {
           resource != null
           && resource.data.get('classId', '') != ''
           && isAssignedTeacher(resource.data.classId)
+          && (
+            resource.data.get('createdBy', '') == request.auth.uid
+            || (
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '') != ""
+              && resource.data.get('createdBy', '') == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '')
+            )
+          )
           && request.resource.data.get('classId', '') == resource.data.classId
           && request.resource.data.get('studentId', '') == resource.data.studentId
+          && request.resource.data.get('createdBy', '') == resource.data.createdBy
         )
         || (
           resource != null
           && isStudentOwner(resource.data.get('studentId', ''))
           && request.resource.data.get('classId', '') == resource.data.classId
           && request.resource.data.get('studentId', '') == resource.data.studentId
+          && request.resource.data.get('createdBy', '') == resource.data.createdBy
         )
       );
       allow delete: if request.auth != null && (
         isActiveAdmin()
-        || (resource != null && resource.data.get('createdBy', '') == request.auth.uid)
-        || (resource != null && resource.data.get('classId', '') != '' && isAssignedTeacher(resource.data.classId))
+        || (
+          resource != null
+          && (
+            resource.data.get('createdBy', '') == request.auth.uid
+            || (
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '') != ""
+              && resource.data.get('createdBy', '') == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teacherId', '')
+            )
+          )
+        )
       );
     }
 
@@ -390,7 +407,7 @@ service cloud.firestore {
       allow read: if request.auth != null && (
         isActiveAdmin()
         || resource.data.get('recipientId', '') == request.auth.uid
-        || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ["admin", "Admin", "ADMIN"] && resource.data.get('recipientRole', '') == "admin")
+        || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ["admin", "Admin", "ADMIN"] && resource.data.get('recipientRole', '') in ["admin", "Admin", "ADMIN"])
       );
       allow create: if request.auth != null && (
         isActiveAdmin()
@@ -401,6 +418,12 @@ service cloud.firestore {
           && request.resource.data.get('referenceId', '') != ''
           && request.resource.data.get('type', '') in ['test_created', 'test_updated', 'marks_updated', 'test_deleted']
           && isTeacherAuthorizedForTestRef(request.resource.data.referenceId)
+        )
+        || (
+          request.resource.data.get('recipientRole', '') in ["admin", "Admin", "ADMIN", "student", "Student", "STUDENT"]
+          && request.resource.data.get('referenceType', '') == 'complaint'
+          && request.resource.data.get('referenceId', '') != ''
+          && request.resource.data.get('type', '') in ['complaint_created', 'complaint_resolved', 'complaint_responded']
         )
       );
 
