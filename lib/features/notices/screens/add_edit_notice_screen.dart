@@ -7,6 +7,7 @@ import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/notice_model.dart';
 import '../../../data/repositories/class_repository.dart';
+import '../../../data/services/firestore_service.dart';
 import '../view_models/notices_view_model.dart';
 
 class AddEditNoticeScreen extends StatefulWidget {
@@ -23,11 +24,11 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
 
-  String _selectedType = 'general'; // general, academic, exam, holiday, fee, important, event
-  String _selectedPriority = 'normal'; // normal, high
-  String _selectedAudience = 'all_students'; // all_students, selected_classes
+  String _selectedType = 'general';
+  String _selectedPriority = 'normal';
+  String _selectedAudience = 'all_teachers';
   Set<String> _selectedClassIds = {};
-  String _statusOverride = ''; // '' or 'draft'
+  String _statusOverride = '';
   bool _isPinned = false;
 
   late DateTime _publishDate;
@@ -38,6 +39,9 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
 
   List<ClassModel> _availableClasses = [];
   bool _isLoadingClasses = true;
+  String _userRole = 'admin';
+  String _userName = 'Admin';
+  String _userUid = '';
 
   @override
   void initState() {
@@ -52,6 +56,7 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
       _descriptionController.text = n.description;
       _selectedType = n.type.toLowerCase();
       _selectedPriority = n.priority.toLowerCase();
+      if (_selectedPriority == 'high') _selectedPriority = 'urgent';
       _selectedAudience = n.targetAudience.toLowerCase();
       _selectedClassIds = n.classIds.toSet();
       _statusOverride = n.statusOverride;
@@ -63,20 +68,70 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
       _expiryDate = DateTime.now().add(const Duration(days: 7));
     }
 
-    _loadClasses();
+    _loadUserAndClasses();
   }
 
-  Future<void> _loadClasses() async {
+  Future<void> _loadUserAndClasses() async {
     setState(() {
       _isLoadingClasses = true;
     });
     try {
-      final classes = await _classRepository.getClasses();
-      if (mounted) {
-        setState(() {
-          _availableClasses = classes;
-          _isLoadingClasses = false;
-        });
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        _userUid = user.uid;
+        final userDoc = await FirestoreService().getUserDocument(user.uid);
+        _userRole = (userDoc?['role'] as String? ?? 'admin').toLowerCase();
+        _userName = userDoc?['name'] as String? ?? user.displayName ?? (_userRole == 'teacher' ? 'Teacher' : 'Admin');
+
+        List<ClassModel> classes = [];
+        if (_userRole == 'teacher') {
+          _selectedAudience = 'selected_classes';
+          Map<String, dynamic>? teacherData = await FirestoreService().getTeacherDocument(user.uid);
+          final customTeacherId = userDoc?['teacherId'] as String? ?? '';
+          if (teacherData == null && customTeacherId.isNotEmpty) {
+            teacherData = await FirestoreService().getTeacherDocument(customTeacherId);
+          }
+          final customUserId = userDoc?['userId'] as String? ?? '';
+          if (teacherData == null && customUserId.isNotEmpty) {
+            teacherData = await FirestoreService().getTeacherDocument(customUserId);
+          }
+
+          final assignedClassIds = (teacherData?['classIds'] as List?)?.map((e) => e.toString().trim()).toList() ?? [];
+          final allClasses = await _classRepository.getClasses();
+
+          final Set<String> assignedIdentifiers = {};
+          for (var id in assignedClassIds) {
+            if (id.isNotEmpty) assignedIdentifiers.add(id.toLowerCase());
+          }
+
+          classes = allClasses.where((c) {
+            return assignedIdentifiers.contains(c.classId.toLowerCase()) ||
+                   assignedIdentifiers.contains(c.className.toLowerCase());
+          }).toList();
+        } else {
+          classes = await _classRepository.getClasses();
+        }
+
+        classes.sort((a, b) => a.className.compareTo(b.className));
+
+        if (widget.noticeToEdit != null && _selectedClassIds.isNotEmpty) {
+          final Set<String> remapped = {};
+          for (var sel in _selectedClassIds) {
+            final match = classes.firstWhere(
+              (c) => c.classId.toLowerCase() == sel.toLowerCase() || c.className.toLowerCase() == sel.toLowerCase(),
+              orElse: () => ClassModel(classId: sel, className: sel, standard: '', medium: '', academicYear: ''),
+            );
+            remapped.add(match.classId);
+          }
+          _selectedClassIds = remapped;
+        }
+
+        if (mounted) {
+          setState(() {
+            _availableClasses = classes;
+            _isLoadingClasses = false;
+          });
+        }
       }
     } catch (_) {
       if (mounted) {
@@ -117,7 +172,7 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
       setState(() {
         _publishDate = picked;
         if (_expiryDate.isBefore(DateTime(picked.year, picked.month, picked.day))) {
-          _expiryDate = picked;
+          _expiryDate = picked.add(const Duration(days: 7));
         }
       });
     }
@@ -156,9 +211,9 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              title: const Text(
-                'Select Classes',
-                style: TextStyle(
+              title: Text(
+                _userRole == 'teacher' ? 'Select Your Assigned Classes' : 'Select Target Classes',
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textMain,
@@ -277,17 +332,35 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
           content: const Text('Please select at least one class'),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           margin: const EdgeInsets.all(16),
         ),
       );
       return;
     }
 
+    if (_userRole == 'teacher') {
+      _selectedAudience = 'selected_classes';
+      final allowedIds = _availableClasses.map((c) => c.classId).toSet();
+      final unauthorized = _selectedClassIds.any((id) => !allowedIds.contains(id));
+      if (unauthorized) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('You can only target classes assigned to you.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+        return;
+      }
+    }
+
     final user = FirebaseAuth.instance.currentUser;
-    final createdBy = user?.uid ?? 'admin';
+    final createdBy = widget.noticeToEdit != null ? widget.noticeToEdit!.createdBy : (_userUid.isNotEmpty ? _userUid : (user?.uid ?? 'admin'));
+    final createdByName = widget.noticeToEdit != null ? widget.noticeToEdit!.createdByName : _userName;
+    final createdByRole = widget.noticeToEdit != null ? widget.noticeToEdit!.createdByRole : _userRole;
 
     bool success = false;
     if (widget.noticeToEdit == null) {
@@ -301,6 +374,8 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
         publishDate: _publishDate,
         expiryDate: _expiryDate,
         createdBy: createdBy,
+        createdByName: createdByName,
+        createdByRole: createdByRole,
         statusOverride: _statusOverride,
         isPinned: _isPinned,
       );
@@ -317,6 +392,8 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
         expiryDate: _expiryDate,
         statusOverride: _statusOverride,
         isPinned: _isPinned,
+        role: _userRole,
+        userId: _userUid,
       );
     }
 
@@ -325,14 +402,10 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(widget.noticeToEdit == null
-              ? 'Notice created successfully.'
-              : 'Notice updated successfully.'),
+          content: Text(_viewModel.successMessage ?? 'Notice saved successfully.'),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           margin: const EdgeInsets.all(16),
         ),
       );
@@ -343,9 +416,7 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
           content: Text(_viewModel.errorMessage!),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           margin: const EdgeInsets.all(16),
         ),
       );
@@ -355,15 +426,15 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.noticeToEdit != null;
+    final isTeacher = _userRole == 'teacher';
 
-    // Build summary string for selected classes
     String classSummary = 'No classes selected';
     if (_selectedClassIds.isNotEmpty) {
       final selectedNames = _availableClasses
           .where((c) => _selectedClassIds.contains(c.classId))
           .map((c) => c.className)
           .toList();
-      if (selectedNames.isNotEmpty) {
+      if (selectedNames.length <= 3) {
         classSummary = selectedNames.join(', ');
       } else {
         classSummary = '${_selectedClassIds.length} classes selected';
@@ -417,13 +488,13 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Enter notice title and detailed content below.',
+                      'Enter notice title and detailed message content below.',
                       style: AppTextStyles.subtitle,
                     ),
                     const SizedBox(height: 20),
 
                     // Title Field
-                    const Text('Notice Title', style: AppTextStyles.inputLabel),
+                    const Text('Notice Title *', style: AppTextStyles.inputLabel),
                     const SizedBox(height: 6),
                     TextFormField(
                       controller: _titleController,
@@ -432,10 +503,16 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                         if (val == null || val.trim().isEmpty) {
                           return 'Please enter notice title';
                         }
+                        if (val.trim().length < 3) {
+                          return 'Title must be at least 3 characters';
+                        }
+                        if (val.trim().length > 100) {
+                          return 'Title cannot exceed 100 characters';
+                        }
                         return null;
                       },
                       decoration: InputDecoration(
-                        hintText: 'e.g., Mid-Term Examination Schedule',
+                        hintText: 'e.g., Upcoming Mid-Term Examination Schedule',
                         hintStyle: const TextStyle(
                             color: AppColors.textSecondary, fontSize: 14),
                         filled: true,
@@ -455,8 +532,8 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Description Field
-                    const Text('Notice Description', style: AppTextStyles.inputLabel),
+                    // Description / Message Field
+                    const Text('Notice Message *', style: AppTextStyles.inputLabel),
                     const SizedBox(height: 6),
                     TextFormField(
                       controller: _descriptionController,
@@ -464,12 +541,18 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                       maxLines: 5,
                       validator: (val) {
                         if (val == null || val.trim().isEmpty) {
-                          return 'Please enter notice content';
+                          return 'Please enter notice message';
+                        }
+                        if (val.trim().length < 5) {
+                          return 'Message must be at least 5 characters';
+                        }
+                        if (val.trim().length > 2000) {
+                          return 'Message cannot exceed 2000 characters';
                         }
                         return null;
                       },
                       decoration: InputDecoration(
-                        hintText: 'Enter full notice description and instructions...',
+                        hintText: 'Enter complete announcement message and instructions...',
                         hintStyle: const TextStyle(
                             color: AppColors.textSecondary, fontSize: 14),
                         filled: true,
@@ -489,7 +572,7 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                     ),
                     const SizedBox(height: 28),
 
-                    // SECTION 2 — NOTICE CLASSIFICATION
+                    // SECTION 2 — CLASSIFICATION
                     const Text(
                       'Classification',
                       style: TextStyle(
@@ -499,7 +582,7 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text('Notice Type', style: AppTextStyles.inputLabel),
+                    const Text('Category *', style: AppTextStyles.inputLabel),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
                       initialValue: _selectedType,
@@ -523,8 +606,10 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                       items: const [
                         DropdownMenuItem(value: 'general', child: Text('General')),
                         DropdownMenuItem(value: 'academic', child: Text('Academic')),
+                        DropdownMenuItem(value: 'examination', child: Text('Examination')),
                         DropdownMenuItem(value: 'exam', child: Text('Exam')),
                         DropdownMenuItem(value: 'holiday', child: Text('Holiday')),
+                        DropdownMenuItem(value: 'urgent', child: Text('Urgent')),
                         DropdownMenuItem(value: 'fee', child: Text('Fee')),
                         DropdownMenuItem(value: 'important', child: Text('Important')),
                         DropdownMenuItem(value: 'event', child: Text('Event')),
@@ -539,8 +624,8 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Priority (Directly below Notice Type)
-                    const Text('Priority', style: AppTextStyles.inputLabel),
+                    // Priority
+                    const Text('Priority *', style: AppTextStyles.inputLabel),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
                       initialValue: _selectedPriority,
@@ -563,7 +648,8 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                       ),
                       items: const [
                         DropdownMenuItem(value: 'normal', child: Text('Normal')),
-                        DropdownMenuItem(value: 'high', child: Text('High')),
+                        DropdownMenuItem(value: 'important', child: Text('Important')),
+                        DropdownMenuItem(value: 'urgent', child: Text('Urgent')),
                       ],
                       onChanged: (val) {
                         if (val != null) {
@@ -585,43 +671,79 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text('Audience', style: AppTextStyles.inputLabel),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedAudience,
-                      isExpanded: true,
-                      style: AppTextStyles.inputText,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: AppColors.surface,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        enabledBorder: OutlineInputBorder(
+
+                    if (isTeacher) ...[
+                      // Teacher audience is strictly restricted to assigned classes
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppColors.lightEmerald,
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.border),
+                          border: Border.all(color: AppColors.primaryEmerald.withValues(alpha: 0.3)),
                         ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: AppColors.primaryEmerald, width: 1.5),
+                        child: Row(
+                          children: const [
+                            Icon(Icons.school_outlined, color: AppColors.darkEmerald, size: 20),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Audience: Selected Classes (Assigned to your account)',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.darkEmerald,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      items: const [
-                        DropdownMenuItem(value: 'all_students', child: Text('All Students')),
-                        DropdownMenuItem(value: 'selected_classes', child: Text('Selected Classes')),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() {
-                            _selectedAudience = val;
-                          });
-                        }
-                      },
-                    ),
+                    ] else ...[
+                      // Admin can choose between All Teachers and Selected Classes
+                      const Text('Audience *', style: AppTextStyles.inputLabel),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedAudience == 'all_teachers' || _selectedAudience == 'selected_classes'
+                            ? _selectedAudience
+                            : 'all_teachers',
+                        isExpanded: true,
+                        style: AppTextStyles.inputText,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: AppColors.surface,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: AppColors.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                                color: AppColors.primaryEmerald, width: 1.5),
+                          ),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'all_teachers', child: Text('All Teachers')),
+                          DropdownMenuItem(value: 'selected_classes', child: Text('Selected Classes')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedAudience = val;
+                            });
+                          }
+                        },
+                      ),
+                    ],
 
                     if (_selectedAudience == 'selected_classes') ...[
                       const SizedBox(height: 16),
-                      const Text('Select Classes', style: AppTextStyles.inputLabel),
+                      Text(
+                        isTeacher ? 'Select Assigned Classes *' : 'Select Target Classes *',
+                        style: AppTextStyles.inputLabel,
+                      ),
                       const SizedBox(height: 6),
                       _isLoadingClasses
                           ? const Center(child: CircularProgressIndicator(color: AppColors.primaryEmerald))
@@ -634,7 +756,7 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                                       color: AppColors.primaryEmerald),
                                   label: Text(
                                     _selectedClassIds.isEmpty
-                                        ? 'Select Classes...'
+                                        ? 'Tap to select classes...'
                                         : '${_selectedClassIds.length} classes selected',
                                     style: const TextStyle(
                                         color: AppColors.textMain,
@@ -680,8 +802,7 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Publish Date',
-                                  style: AppTextStyles.inputLabel),
+                              const Text('Publish Date', style: AppTextStyles.inputLabel),
                               const SizedBox(height: 6),
                               InkWell(
                                 onTap: _selectPublishDate,
@@ -718,13 +839,12 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Expiry Date',
-                                  style: AppTextStyles.inputLabel),
+                              const Text('Expiry Date', style: AppTextStyles.inputLabel),
                               const SizedBox(height: 6),
                               InkWell(
                                 onTap: _selectExpiryDate,
@@ -746,13 +866,13 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                                         style: const TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
-                                          color: AppColors.textMain,
+                                          color: AppColors.warning,
                                         ),
                                       ),
                                       const Icon(
-                                        Icons.calendar_today_rounded,
+                                        Icons.event_available_rounded,
                                         size: 16,
-                                        color: AppColors.textSecondary,
+                                        color: AppColors.warning,
                                       ),
                                     ],
                                   ),
@@ -763,86 +883,62 @@ class _AddEditNoticeScreenState extends State<AddEditNoticeScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    const Text('Save Mode', style: AppTextStyles.inputLabel),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      initialValue: _statusOverride,
-                      isExpanded: true,
-                      style: AppTextStyles.inputText,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: AppColors.surface,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: AppColors.primaryEmerald, width: 1.5),
+                    const SizedBox(height: 20),
+
+                    // Pin Notice Switch
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Pin Notice to Top',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMain,
                         ),
                       ),
-                      items: const [
-                        DropdownMenuItem(value: '', child: Text('Automatic (Based on Dates)')),
-                        DropdownMenuItem(value: 'draft', child: Text('Save as Draft')),
-                      ],
+                      subtitle: const Text(
+                        'Pinned notices appear at the top of the board.',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                      value: _isPinned,
+                      activeThumbColor: AppColors.primaryEmerald,
                       onChanged: (val) {
-                        if (val != null) {
-                          setState(() {
-                            _statusOverride = val;
-                          });
-                        }
+                        setState(() {
+                          _isPinned = val;
+                        });
                       },
                     ),
-                    const SizedBox(height: 28),
 
-                    // SECTION 5 — OPTIONS (Pin Notice)
-                    const Text(
-                      'Options',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textMain,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: CheckboxListTile(
-                        title: const Text('Pin this notice',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textMain)),
-                        subtitle: const Text(
-                            'Pinned notices appear at the top of the notice list',
-                            style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                        value: _isPinned,
-                        activeColor: AppColors.primaryEmerald,
-                        checkboxShape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                    // Draft Option Switch
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Save as Draft',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMain,
                         ),
-                        onChanged: (bool? val) {
-                          setState(() {
-                            _isPinned = val ?? false;
-                          });
-                        },
                       ),
+                      subtitle: const Text(
+                        'Drafts remain hidden until published.',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                      value: _statusOverride == 'draft',
+                      activeThumbColor: AppColors.primaryEmerald,
+                      onChanged: (val) {
+                        setState(() {
+                          _statusOverride = val ? 'draft' : '';
+                        });
+                      },
                     ),
-
                     const SizedBox(height: 32),
+
                     PrimaryButton(
-                      text: isEditing ? 'Update Notice' : 'Create Notice',
+                      text: isEditing ? 'Update Notice' : 'Publish Notice',
                       isLoading: _viewModel.isSaving,
-                      onPressed: _viewModel.isSaving ? null : _handleSave,
+                      onPressed: _handleSave,
                     ),
-                    const SizedBox(height: 20),
                   ],
                 ),
               ),

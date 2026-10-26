@@ -6,6 +6,8 @@ import '../../../data/models/notification_model.dart';
 import '../../../data/repositories/complaint_repository.dart';
 import '../../complaints/screens/complaint_details_screen.dart';
 import '../view_models/notifications_view_model.dart';
+import '../../../data/repositories/notice_repository.dart';
+import '../../notices/screens/notice_details_screen.dart';
 import 'notification_details_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -92,6 +94,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (context) => ComplaintDetailsScreen(complaint: complaint),
+              ),
+            );
+            return;
+          }
+        }
+        else if (refType.contains('notice')) {
+          final noticeRepo = NoticeRepository();
+          final notice = await noticeRepo.getNoticeById(refId);
+          if (notice != null && mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => NoticeDetailsScreen(notice: notice),
               ),
             );
             return;

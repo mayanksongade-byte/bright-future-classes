@@ -220,9 +220,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             },
                           ),
                           _buildStatCard(
-                            title: 'Total Notices',
+                            title: 'Notice Management',
                             value: '${_viewModel.totalNotices}',
-                            icon: Icons.notifications_active_outlined,
+                            icon: Icons.campaign_outlined,
                             iconColor: AppColors.primaryEmerald,
                             bgColor: AppColors.lightEmerald,
                             onTap: () async {

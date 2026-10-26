@@ -14,6 +14,8 @@ import '../../../data/services/firestore_service.dart';
 import '../../notifications/screens/notification_details_screen.dart';
 import '../../tests/screens/test_details_screen.dart';
 import '../../tests/view_models/tests_view_model.dart';
+import '../../../data/repositories/notice_repository.dart';
+import '../../notices/screens/notice_details_screen.dart';
 
 class TeacherNotificationsScreen extends StatefulWidget {
   const TeacherNotificationsScreen({super.key});
@@ -120,6 +122,21 @@ class _TeacherNotificationsScreenState
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => TestDetailsScreen(testItem: testItem),
+            ),
+          );
+          return;
+        }
+      } catch (_) {}
+    }
+
+    else if (notif.referenceType == 'notice' && notif.referenceId != null && notif.referenceId!.isNotEmpty) {
+      try {
+        final noticeRepo = NoticeRepository();
+        final notice = await noticeRepo.getNoticeById(notif.referenceId!);
+        if (notice != null && mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => NoticeDetailsScreen(notice: notice),
             ),
           );
           return;

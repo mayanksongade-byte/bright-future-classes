@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/notice_model.dart';
 import '../../../data/repositories/class_repository.dart';
+import '../../../data/services/firestore_service.dart';
 import '../view_models/notices_view_model.dart';
 import 'add_edit_notice_screen.dart';
 
@@ -22,6 +24,9 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
   late final ClassRepository _classRepository;
   List<String> _classNames = [];
   bool _isLoadingClasses = true;
+  bool _canEditOrDelete = false;
+  String _userRole = 'teacher';
+  String _currentUid = '';
 
   @override
   void initState() {
@@ -31,6 +36,26 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
     _viewModel.addListener(_onViewModelChange);
     _classRepository = ClassRepository();
     _loadClassNames();
+    _checkPermission();
+  }
+
+  Future<void> _checkPermission() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _currentUid = user.uid;
+      await _viewModel.markNoticeAsRead(_notice.noticeId, user.uid);
+
+      final userDoc = await FirestoreService().getUserDocument(user.uid);
+      final role = (userDoc?['role'] as String? ?? 'teacher').toLowerCase();
+      _userRole = role;
+
+      if (role == 'admin') {
+        _canEditOrDelete = true;
+      } else if (role == 'teacher') {
+        _canEditOrDelete = _notice.createdBy == user.uid;
+      }
+      if (mounted) setState(() {});
+    }
   }
 
   void _onViewModelChange() {
@@ -51,7 +76,7 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
       try {
         final allClasses = await _classRepository.getClasses();
         final classMap = {for (var c in allClasses) c.classId: c.className};
-        
+
         final names = <String>[];
         for (var id in _notice.classIds) {
           if (classMap.containsKey(id)) {
@@ -83,6 +108,8 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
   }
 
   Future<void> _confirmDelete() async {
+    if (!_canEditOrDelete) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -128,7 +155,7 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
     );
 
     if (confirmed == true && mounted) {
-      final success = await _viewModel.deleteNotice(_notice.noticeId);
+      final success = await _viewModel.deleteNotice(_notice.noticeId, userRole: _userRole, userId: _currentUid);
       if (!mounted) return;
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -172,7 +199,11 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
   Widget build(BuildContext context) {
     final status = _notice.computedStatus;
     final statusColor = _getStatusColor(status);
-    final isHighPriority = _notice.priority.toLowerCase() == 'high';
+    final priority = _notice.priority.toLowerCase();
+    final isUrgent = priority == 'urgent' || priority == 'high';
+    final isImportant = priority == 'important';
+
+    final isRead = _notice.isReadBy(_currentUid);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -193,36 +224,38 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
             color: AppColors.textMain,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined,
-                color: AppColors.primaryEmerald),
-            onPressed: () async {
-              final updated = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (context) => AddEditNoticeScreen(noticeToEdit: _notice),
+        actions: _canEditOrDelete
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined,
+                      color: AppColors.primaryEmerald),
+                  onPressed: () async {
+                    final updated = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (context) => AddEditNoticeScreen(noticeToEdit: _notice),
+                      ),
+                    );
+                    if (updated == true) {
+                      final fresh = await _viewModel.getNoticeById(_notice.noticeId);
+                      if (fresh != null && mounted) {
+                        setState(() {
+                          _notice = fresh;
+                        });
+                        _loadClassNames();
+                      }
+                    }
+                  },
+                  tooltip: 'Edit Notice',
                 ),
-              );
-              if (updated == true) {
-                final fresh = await _viewModel.getNoticeById(_notice.noticeId);
-                if (fresh != null && mounted) {
-                  setState(() {
-                    _notice = fresh;
-                  });
-                  _loadClassNames();
-                }
-              }
-            },
-            tooltip: 'Edit',
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded,
-                color: AppColors.error),
-            onPressed: _confirmDelete,
-            tooltip: 'Delete',
-          ),
-          const SizedBox(width: 8),
-        ],
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded,
+                      color: AppColors.error),
+                  onPressed: _confirmDelete,
+                  tooltip: 'Delete Notice',
+                ),
+                const SizedBox(width: 8),
+              ]
+            : [],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: AppColors.border, height: 1),
@@ -254,14 +287,19 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
                   children: [
                     // Title & Status
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
                           child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (_notice.isPinned) ...[
-                                const Icon(Icons.push_pin_rounded,
-                                    size: 20, color: AppColors.primaryEmerald),
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 3),
+                                  child: Icon(Icons.push_pin_rounded,
+                                      size: 20, color: AppColors.primaryEmerald),
+                                ),
                                 const SizedBox(width: 8),
                               ],
                               Expanded(
@@ -277,6 +315,7 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
                             ],
                           ),
                         ),
+                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 6),
@@ -297,7 +336,7 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Type, Priority & Audience
+                    // Badges Row: Category, Priority, Read Status
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -318,7 +357,7 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
                             ),
                           ),
                         ),
-                        if (isHighPriority)
+                        if (isUrgent)
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 4),
@@ -327,49 +366,114 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Text(
-                              'HIGH PRIORITY',
+                              'URGENT',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.error,
                               ),
                             ),
-                          ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.border.withValues(alpha: 0.4),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            _notice.isPinned ? 'Pinned' : 'Normal Pin',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
+                          )
+                        else if (isImportant)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'IMPORTANT',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.warning,
+                              ),
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: const Text(
+                              'NORMAL PRIORITY',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
                           ),
-                        ),
+
+                        // Read status badge
+                        if (_userRole == 'admin')
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.visibility_outlined, size: 14, color: AppColors.textSecondary),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${_notice.readUserIds.length} readers',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isRead
+                                  ? AppColors.lightEmerald
+                                  : AppColors.primaryEmerald,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              isRead ? 'READ' : 'UNREAD',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isRead ? AppColors.darkEmerald : Colors.white,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
 
                     // Target Audience Section
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Icon(Icons.people_outline_rounded,
-                            size: 16, color: AppColors.textSecondary),
-                        const SizedBox(width: 6),
+                            size: 18, color: AppColors.textSecondary),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                _notice.targetAudience == 'all_students'
-                                    ? 'Target Audience: All Students'
-                                    : 'Selected Classes (${_notice.classIds.length})',
+                                _notice.targetAudience == 'all_teachers'
+                                    ? 'Target Audience: All Teachers'
+                                    : 'Target Audience: Selected Classes (${_notice.classIds.length})',
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -377,9 +481,9 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
                                 ),
                               ),
                               if (_notice.targetAudience == 'selected_classes') ...[
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 6),
                                 _isLoadingClasses
-                                    ? const Text('Loading classes...',
+                                    ? const Text('Loading class details...',
                                         style: TextStyle(
                                             fontSize: 12,
                                             color: AppColors.textSecondary))
@@ -420,13 +524,13 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
                         color: AppColors.textSecondary,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Text(
                       _notice.description,
                       style: const TextStyle(
                         fontSize: 15,
                         color: AppColors.textMain,
-                        height: 1.4,
+                        height: 1.5,
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -456,78 +560,87 @@ class _NoticeDetailsScreenState extends State<NoticeDetailsScreen> {
 
                     // Metadata
                     Text(
-                      'Created: ${_notice.createdAt != null ? _notice.createdAt.toString().substring(0, 16) : '-'}',
+                      'Author: ${_notice.createdByName.isNotEmpty ? _notice.createdByName : "Staff"} (${_notice.createdByRole.toUpperCase()})',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textMain,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Created: ${_notice.createdAt != null ? AppDateFormatter.formatDate(_notice.createdAt) : '-'}',
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),
                     ),
 
-                    const SizedBox(height: 28),
-
-                    // Actions Row
-                    Row(
-                      children: [
-                        if (status == 'draft')
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                await _viewModel.publishNotice(_notice.noticeId);
-                                final fresh = await _viewModel.getNoticeById(_notice.noticeId);
-                                if (fresh != null && mounted) {
-                                  setState(() {
-                                    _notice = fresh;
-                                  });
-                                }
-                              },
-                              icon: const Icon(Icons.publish_rounded,
-                                  size: 16, color: AppColors.success),
-                              label: const Text('Publish',
-                                  style: TextStyle(color: AppColors.success)),
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: AppColors.success),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                    if (_canEditOrDelete) ...[
+                      const SizedBox(height: 28),
+                      Row(
+                        children: [
+                          if (status == 'draft')
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  await _viewModel.publishNotice(_notice.noticeId);
+                                  final fresh = await _viewModel.getNoticeById(_notice.noticeId);
+                                  if (fresh != null && mounted) {
+                                    setState(() {
+                                      _notice = fresh;
+                                    });
+                                  }
+                                },
+                                icon: const Icon(Icons.publish_rounded,
+                                    size: 16, color: AppColors.success),
+                                label: const Text('Publish',
+                                    style: TextStyle(color: AppColors.success)),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: AppColors.success),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
                                 ),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
                               ),
                             ),
-                          ),
-                        if (status == 'published')
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                await _viewModel.unpublishNotice(_notice.noticeId);
-                                final fresh = await _viewModel.getNoticeById(_notice.noticeId);
-                                if (fresh != null && mounted) {
-                                  setState(() {
-                                    _notice = fresh;
-                                  });
-                                }
-                              },
-                              icon: const Icon(Icons.undo_rounded,
-                                  size: 16, color: AppColors.warning),
-                              label: const Text('Unpublish',
-                                  style: TextStyle(color: AppColors.warning)),
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: AppColors.warning),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                          if (status == 'published')
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  await _viewModel.unpublishNotice(_notice.noticeId);
+                                  final fresh = await _viewModel.getNoticeById(_notice.noticeId);
+                                  if (fresh != null && mounted) {
+                                    setState(() {
+                                      _notice = fresh;
+                                    });
+                                  }
+                                },
+                                icon: const Icon(Icons.undo_rounded,
+                                    size: 16, color: AppColors.warning),
+                                label: const Text('Unpublish',
+                                    style: TextStyle(color: AppColors.warning)),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: AppColors.warning),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
                                 ),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
                               ),
                             ),
+                          if (status == 'draft' || status == 'published')
+                            const SizedBox(width: 12),
+                          Expanded(
+                            child: PrimaryButton(
+                              text: 'Delete Notice',
+                              onPressed: _confirmDelete,
+                            ),
                           ),
-                        if (status == 'draft' || status == 'published')
-                          const SizedBox(width: 12),
-                        Expanded(
-                          child: PrimaryButton(
-                            text: 'Delete',
-                            onPressed: _confirmDelete,
-                          ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

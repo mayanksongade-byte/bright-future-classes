@@ -5,14 +5,17 @@ class NoticeModel {
   final String title;
   final String description;
   final String type; // general, academic, exam, holiday, fee, important, event
-  final String priority; // normal, high
-  final String targetAudience; // all_students, selected_classes
+  final String priority; // normal, high, urgent
+  final String targetAudience; // all_teachers, selected_classes, all_students
   final List<String> classIds;
   final DateTime publishDate;
   final DateTime expiryDate;
   final String statusOverride; // 'draft' or ''
   final bool isPinned;
   final String createdBy;
+  final String createdByName;
+  final String createdByRole;
+  final List<String> readUserIds;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -29,6 +32,9 @@ class NoticeModel {
     this.statusOverride = '',
     this.isPinned = false,
     required this.createdBy,
+    this.createdByName = '',
+    this.createdByRole = 'admin',
+    this.readUserIds = const [],
     this.createdAt,
     this.updatedAt,
   });
@@ -49,6 +55,11 @@ class NoticeModel {
       return 'scheduled';
     }
     return 'published';
+  }
+
+  bool isReadBy(String userId) {
+    if (userId.isEmpty) return false;
+    return readUserIds.contains(userId);
   }
 
   factory NoticeModel.fromMap(Map<String, dynamic> map, [String? docId]) {
@@ -85,7 +96,6 @@ class NoticeModel {
           DateTime.now().add(const Duration(days: 7));
     }
 
-    // Backward compatibility for classIds vs classId
     List<String> parsedClassIds = [];
     final rawClassIds = map['classIds'];
     if (rawClassIds is List) {
@@ -97,13 +107,19 @@ class NoticeModel {
       }
     }
 
+    List<String> parsedReadUserIds = [];
+    final rawReadUserIds = map['readUserIds'];
+    if (rawReadUserIds is List) {
+      parsedReadUserIds = rawReadUserIds.map((e) => e.toString()).toSet().toList();
+    }
+
     final rawStatus = map['status'] as String? ?? '';
     final rawOverride = map['statusOverride'] as String? ?? '';
     final resolvedOverride = rawOverride.isNotEmpty
         ? rawOverride
         : (rawStatus == 'draft' ? 'draft' : '');
 
-    final rawAudience = map['targetAudience'] as String? ?? 'all_students';
+    final rawAudience = map['targetAudience'] as String? ?? 'all_teachers';
     final normalizedAudience =
         rawAudience == 'specific_class' ? 'selected_classes' : rawAudience;
 
@@ -120,6 +136,9 @@ class NoticeModel {
       statusOverride: resolvedOverride,
       isPinned: map['isPinned'] as bool? ?? false,
       createdBy: map['createdBy'] as String? ?? '',
+      createdByName: map['createdByName'] as String? ?? '',
+      createdByRole: map['createdByRole'] as String? ?? 'admin',
+      readUserIds: parsedReadUserIds,
       createdAt: parsedCreatedAt,
       updatedAt: parsedUpdatedAt,
     );
@@ -140,6 +159,9 @@ class NoticeModel {
       'statusOverride': statusOverride,
       'isPinned': isPinned,
       'createdBy': createdBy,
+      'createdByName': createdByName,
+      'createdByRole': createdByRole,
+      'readUserIds': readUserIds.toSet().toList(),
       'createdAt': createdAt != null
           ? Timestamp.fromDate(createdAt!)
           : FieldValue.serverTimestamp(),
@@ -160,6 +182,9 @@ class NoticeModel {
     String? statusOverride,
     bool? isPinned,
     String? createdBy,
+    String? createdByName,
+    String? createdByRole,
+    List<String>? readUserIds,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -176,6 +201,9 @@ class NoticeModel {
       statusOverride: statusOverride ?? this.statusOverride,
       isPinned: isPinned ?? this.isPinned,
       createdBy: createdBy ?? this.createdBy,
+      createdByName: createdByName ?? this.createdByName,
+      createdByRole: createdByRole ?? this.createdByRole,
+      readUserIds: readUserIds != null ? readUserIds.toSet().toList() : this.readUserIds,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

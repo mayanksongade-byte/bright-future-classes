@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/notice_model.dart';
+import '../../../data/services/firestore_service.dart';
 import '../view_models/notices_view_model.dart';
 import 'add_edit_notice_screen.dart';
 import 'notice_details_screen.dart';
@@ -19,13 +21,27 @@ class NoticesListScreen extends StatefulWidget {
 class _NoticesListScreenState extends State<NoticesListScreen> {
   late final NoticesViewModel _viewModel;
   final TextEditingController _searchController = TextEditingController();
+  final FirestoreService _firestoreService = FirestoreService();
+
+  String _userRole = 'admin';
+  String _currentUserId = '';
 
   @override
   void initState() {
     super.initState();
     _viewModel = NoticesViewModel();
     _viewModel.addListener(_onViewModelChange);
-    _viewModel.fetchNoticesData();
+    _resolveUserAndFetch();
+  }
+
+  Future<void> _resolveUserAndFetch() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _currentUserId = user.uid;
+      final userDoc = await _firestoreService.getUserDocument(user.uid);
+      _userRole = (userDoc?['role'] as String? ?? 'admin').toLowerCase();
+    }
+    await _viewModel.fetchNoticesData(role: _userRole, userId: _currentUserId);
   }
 
   void _onViewModelChange() {
@@ -77,7 +93,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
           tooltip: 'Back',
         ),
         title: const Text(
-          'Notices',
+          'Notice Board',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -93,7 +109,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
         child: _viewModel.isLoading
             ? const Center(child: AppLoadingIndicator())
             : RefreshIndicator(
-                onRefresh: _viewModel.fetchNoticesData,
+                onRefresh: () => _viewModel.fetchNoticesData(role: _userRole, userId: _currentUserId),
                 color: AppColors.primaryEmerald,
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(
@@ -154,7 +170,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                                   ),
                                 );
                                 if (created == true) {
-                                  _viewModel.fetchNoticesData();
+                                  _viewModel.fetchNoticesData(role: _userRole, userId: _currentUserId);
                                 }
                               },
                             ),
@@ -176,11 +192,20 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                             style: AppTextStyles.inputText,
                             onChanged: (val) => _viewModel.setSearchQuery(val),
                             decoration: InputDecoration(
-                              hintText: 'Search by notice title...',
+                              hintText: 'Search by notice title or message...',
                               hintStyle: const TextStyle(
                                   color: AppColors.textSecondary, fontSize: 14),
                               prefixIcon: const Icon(Icons.search_rounded,
                                   color: AppColors.textSecondary),
+                              suffixIcon: _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear_rounded, size: 18),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        _viewModel.setSearchQuery('');
+                                      },
+                                    )
+                                  : null,
                               filled: true,
                               fillColor: AppColors.surface,
                               contentPadding: const EdgeInsets.symmetric(
@@ -203,7 +228,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                             spacing: 12,
                             runSpacing: 12,
                             children: [
-                              // Type filter (includes Event)
+                              // Category filter
                               SizedBox(
                                 width: 200,
                                 child: DropdownButtonFormField<String>(
@@ -211,7 +236,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                                   isExpanded: true,
                                   style: AppTextStyles.inputText,
                                   decoration: InputDecoration(
-                                    labelText: 'Notice Type',
+                                    labelText: 'Category',
                                     filled: true,
                                     fillColor: AppColors.surface,
                                     contentPadding: const EdgeInsets.symmetric(
@@ -232,10 +257,10 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                                     'All',
                                     'General',
                                     'Academic',
-                                    'Exam',
+                                    'Examination',
                                     'Holiday',
+                                    'Urgent',
                                     'Fee',
-                                    'Important',
                                     'Event'
                                   ]
                                       .map((t) => DropdownMenuItem(
@@ -251,9 +276,53 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                                   },
                                 ),
                               ),
+                              // Priority filter
+                              SizedBox(
+                                width: 180,
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: _viewModel.selectedPriorityFilter,
+                                  isExpanded: true,
+                                  style: AppTextStyles.inputText,
+                                  decoration: InputDecoration(
+                                    labelText: 'Priority',
+                                    filled: true,
+                                    fillColor: AppColors.surface,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide:
+                                          const BorderSide(color: AppColors.border),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                          color: AppColors.primaryEmerald,
+                                          width: 1.5),
+                                    ),
+                                  ),
+                                  items: [
+                                    'All',
+                                    'Normal',
+                                    'Important',
+                                    'Urgent'
+                                  ]
+                                      .map((p) => DropdownMenuItem(
+                                            value: p,
+                                            child: Text(p,
+                                                overflow: TextOverflow.ellipsis),
+                                          ))
+                                      .toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      _viewModel.setPriorityFilter(val);
+                                    }
+                                  },
+                                ),
+                              ),
                               // Status filter
                               SizedBox(
-                                width: 200,
+                                width: 180,
                                 child: DropdownButtonFormField<String>(
                                   initialValue: _viewModel.selectedStatusFilter,
                                   isExpanded: true,
@@ -278,9 +347,9 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                                   ),
                                   items: [
                                     'All',
-                                    'Draft',
-                                    'Scheduled',
                                     'Published',
+                                    'Scheduled',
+                                    'Draft',
                                     'Expired'
                                   ]
                                       .map((st) => DropdownMenuItem(
@@ -304,7 +373,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                                   isExpanded: true,
                                   style: AppTextStyles.inputText,
                                   decoration: InputDecoration(
-                                    labelText: 'Class Filter',
+                                    labelText: 'Target Class',
                                     filled: true,
                                     fillColor: AppColors.surface,
                                     contentPadding: const EdgeInsets.symmetric(
@@ -354,20 +423,23 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                           ),
                           const SizedBox(height: 12),
 
-                          notices.isEmpty
-                              ? _buildEmptyState()
-                              : ListView.separated(
-                                  shrinkWrap: true,
-                                  physics:
-                                      const NeverScrollableScrollPhysics(),
-                                  itemCount: notices.length,
-                                  separatorBuilder: (context, index) =>
-                                      const SizedBox(height: 12),
-                                  itemBuilder: (context, index) {
-                                    final notice = notices[index];
-                                    return _buildNoticeCard(notice);
-                                  },
-                                ),
+                          if (_viewModel.errorMessage != null && notices.isEmpty)
+                            _buildErrorState(_viewModel.errorMessage!)
+                          else if (notices.isEmpty)
+                            _buildEmptyState()
+                          else
+                            ListView.separated(
+                              shrinkWrap: true,
+                              physics:
+                                  const NeverScrollableScrollPhysics(),
+                              itemCount: notices.length,
+                              separatorBuilder: (context, index) =>
+                                  const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                final notice = notices[index];
+                                return _buildNoticeCard(notice);
+                              },
+                            ),
                         ],
                       ),
                     ),
@@ -415,9 +487,55 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
     );
   }
 
+  Widget _buildErrorState(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 48,
+            color: AppColors.error,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textMain,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => _viewModel.fetchNoticesData(role: _userRole, userId: _currentUserId),
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Try Again'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryEmerald,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
     final hasSearchOrFilter = _viewModel.searchQuery.isNotEmpty ||
         _viewModel.selectedTypeFilter != 'All' ||
+        _viewModel.selectedPriorityFilter != 'All' ||
         _viewModel.selectedStatusFilter != 'All' ||
         _viewModel.selectedClassFilter != null;
 
@@ -449,7 +567,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
           Text(
             hasSearchOrFilter
                 ? 'Try changing your search or filters.'
-                : 'Create your first notice to share important information with students.',
+                : 'Create your first notice to share announcements and updates.',
             style: AppTextStyles.subtitle,
             textAlign: TextAlign.center,
           ),
@@ -464,7 +582,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                   ),
                 );
                 if (created == true) {
-                  _viewModel.fetchNoticesData();
+                  _viewModel.fetchNoticesData(role: _userRole, userId: _currentUserId);
                 }
               },
             ),
@@ -477,9 +595,14 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
   Widget _buildNoticeCard(NoticeModel notice) {
     final status = notice.computedStatus;
     final statusColor = _getStatusColor(status);
-    final isHighPriority = notice.priority.toLowerCase() == 'high';
+    final priority = notice.priority.toLowerCase();
+    final isUrgent = priority == 'urgent' || priority == 'high';
+    final isImportant = priority == 'important';
 
-    String audienceText = 'All Students';
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final isUnread = !notice.isReadBy(currentUserId);
+
+    String audienceText = 'All Teachers';
     if (notice.targetAudience == 'selected_classes' && notice.classIds.isNotEmpty) {
       final classMap = {for (var c in _viewModel.classes) c.classId: c.className};
       final names = notice.classIds
@@ -496,12 +619,15 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
 
     return InkWell(
       onTap: () async {
+        if (_currentUserId.isNotEmpty) {
+          _viewModel.markNoticeAsRead(notice.noticeId, _currentUserId);
+        }
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => NoticeDetailsScreen(notice: notice),
           ),
         );
-        _viewModel.fetchNoticesData();
+        _viewModel.fetchNoticesData(role: _userRole, userId: _currentUserId);
       },
       borderRadius: BorderRadius.circular(16),
       child: Container(
@@ -526,15 +652,21 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top Row: Pin, Icon, Title, Author, Badges, Status
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (notice.isPinned) ...[
-                        const Icon(Icons.push_pin_rounded,
-                            size: 18, color: AppColors.primaryEmerald),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Icon(Icons.push_pin_rounded,
+                              size: 18, color: AppColors.primaryEmerald),
+                        ),
                         const SizedBox(width: 8),
                       ],
                       Container(
@@ -544,7 +676,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Icon(
-                          Icons.notifications_active_outlined,
+                          Icons.campaign_outlined,
                           color: AppColors.primaryEmerald,
                           size: 20,
                         ),
@@ -554,31 +686,88 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    notice.title,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textMain,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (isUnread) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryEmerald,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'UNREAD',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 3),
                             Text(
-                              notice.title,
+                              notice.createdByRole.toLowerCase() == 'admin'
+                                  ? 'Created by Admin: ${notice.createdByName.isNotEmpty ? notice.createdByName : 'Admin'}'
+                                  : 'Created by Teacher: ${notice.createdByName.isNotEmpty ? notice.createdByName : 'Teacher'}',
                               style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textMain,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 4),
                             Wrap(
                               spacing: 6,
+                              runSpacing: 4,
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.background,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: AppColors.border),
+                                  ),
+                                  child: Text(
+                                    notice.type.toUpperCase(),
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
                                 Text(
-                                  '${notice.type.toUpperCase()} • $audienceText',
+                                  '• $audienceText',
                                   style: const TextStyle(
                                     fontSize: 12,
+                                    fontWeight: FontWeight.w500,
                                     color: AppColors.textSecondary,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                if (isHighPriority)
+                                if (isUrgent)
                                   Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 6, vertical: 2),
@@ -587,11 +776,28 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: const Text(
-                                      'HIGH',
+                                      'URGENT',
                                       style: TextStyle(
                                         fontSize: 9,
                                         fontWeight: FontWeight.w700,
                                         color: AppColors.error,
+                                      ),
+                                    ),
+                                  )
+                                else if (isImportant)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEF3C7),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'IMPORTANT',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.warning,
                                       ),
                                     ),
                                   ),
@@ -603,6 +809,7 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 4),
@@ -622,25 +829,53 @@ class _NoticesListScreenState extends State<NoticesListScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            const Divider(height: 1, color: AppColors.border),
+
+            // Short Message Preview
+            Text(
+              notice.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textMain,
+                height: 1.4,
+              ),
+            ),
             const SizedBox(height: 12),
+
+            const Divider(height: 1, color: AppColors.border),
+            const SizedBox(height: 10),
+
+            // Footer: Publish and Expiry Dates
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Publish: ${_formatDate(notice.publishDate)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.calendar_today_rounded, size: 13, color: AppColors.textSecondary),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Published: ${_formatDate(notice.publishDate)}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  'Expiry: ${_formatDate(notice.expiryDate)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.warning,
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.event_available_rounded, size: 13, color: AppColors.warning),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Expires: ${_formatDate(notice.expiryDate)}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -705,11 +705,23 @@ class FirestoreService {
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
   getAllNoticeDocuments() async {
-    final snapshot = await _firestore
-        .collection('notices')
-        .orderBy('createdAt', descending: true)
-        .get();
-    return snapshot.docs;
+    try {
+      final snapshot = await _firestore
+          .collection('notices')
+          .orderBy('createdAt', descending: true)
+          .get();
+      return snapshot.docs;
+    } catch (_) {
+      final snapshot = await _firestore.collection('notices').get();
+      return snapshot.docs;
+    }
+  }
+
+  Future<void> markNoticeAsRead(String noticeId, String userId) async {
+    await _firestore.collection('notices').doc(noticeId).update({
+      'readUserIds': FieldValue.arrayUnion([userId]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<Map<String, dynamic>?> getNoticeDocument(String noticeId) async {

@@ -20,7 +20,7 @@ class NoticeRepository {
       );
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw Exception('Permission denied. Only admins can create notices.');
+        throw Exception('Permission denied. You do not have permission to create this notice.');
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {
@@ -69,7 +69,7 @@ class NoticeRepository {
       );
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw Exception('Permission denied. Only admins can update notices.');
+        throw Exception('Permission denied. You do not have permission to update this notice.');
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {
@@ -86,12 +86,20 @@ class NoticeRepository {
       await _firestoreService.deleteNoticeDocument(noticeId);
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw Exception('Permission denied. Only admins can delete notices.');
+        throw Exception('Permission denied. You do not have permission to delete this notice.');
       }
       throw Exception('Database error (${e.code}): ${e.message}');
     } catch (e) {
       if (e is Exception) rethrow;
       throw Exception('An unexpected error occurred while deleting notice.');
+    }
+  }
+  Future<void> markNoticeAsRead(String noticeId, String userId) async {
+    try {
+      await _firestoreService.markNoticeAsRead(noticeId, userId);
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Failed to update notice read status.');
     }
   }
 }

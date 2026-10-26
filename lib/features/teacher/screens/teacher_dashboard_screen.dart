@@ -13,6 +13,7 @@ import 'teacher_notifications_screen.dart';
 import 'teacher_profile_screen.dart';
 import 'teacher_student_list_screen.dart';
 import 'teacher_tests_screen.dart';
+import '../../notices/screens/notices_list_screen.dart';
 
 class TeacherDashboardScreen extends StatefulWidget {
   const TeacherDashboardScreen({super.key});
@@ -367,6 +368,18 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => const TeacherComplaintsScreen(),
+            ),
+          );
+        },
+      },
+      {
+        'title': 'Notice Board',
+        'subtitle': 'Announcements & notices',
+        'icon': Icons.campaign_outlined,
+        'action': () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const NoticesListScreen(),
             ),
           );
         },
