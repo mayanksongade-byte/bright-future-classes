@@ -23,6 +23,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final _formKey = GlobalKey<FormState>();
   final _studentIdController = TextEditingController();
   final _nameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _dobController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
@@ -30,6 +32,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final _parentPhoneController = TextEditingController();
   final _totalFeesController = TextEditingController(text: '30000');
   final _discountController = TextEditingController(text: '0');
+
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   String _selectedGender = 'Male';
   String? _selectedClassId;
@@ -79,9 +84,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           _isLoadingClasses = false;
           if (_availableClasses.isNotEmpty && _selectedClassId == null) {
             _selectedClassId = _availableClasses.first.classId;
-          } else if (_selectedClassId != null &&
-              !_availableClasses.any((c) => c.classId == _selectedClassId)) {
-            // Keep or fallback safely
           }
         });
       }
@@ -106,6 +108,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _viewModel.dispose();
     _studentIdController.dispose();
     _nameController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _dobController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
@@ -192,8 +196,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       if (discount < 0 || discount > totalFees) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text(
-                'Discount cannot be negative or greater than Total Fees'),
+            content: const Text('Discount cannot be negative or greater than Total Fees'),
             backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -218,6 +221,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         discount: discount,
         classId: _selectedClassId,
         status: _selectedStatus,
+        password: _passwordController.text.trim(),
       );
     }
 
@@ -228,14 +232,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         SnackBar(
           content: Row(
             children: [
-              const Icon(Icons.check_circle_outline_rounded,
-                  color: Colors.white, size: 20),
+              const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   isEditing
                       ? 'Student updated successfully'
-                      : 'Student and fee record added successfully',
+                      : 'Student account and fee record added successfully',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w500,
@@ -258,8 +261,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         SnackBar(
           content: Row(
             children: [
-              const Icon(Icons.error_outline_rounded,
-                  color: Colors.white, size: 20),
+              const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -341,14 +343,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Enter student personal details and contact info below.',
+                      'Enter student personal details below.',
                       style: AppTextStyles.subtitle,
                     ),
                     const SizedBox(height: 20),
 
                     // Student ID
                     AppTextField(
-                      label: 'Student ID',
+                      label: 'Student ID *',
                       hintText: 'e.g. STU001',
                       controller: _studentIdController,
                       enabled: !isEditing,
@@ -366,7 +368,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
                     // Full Name
                     AppTextField(
-                      label: 'Full Name',
+                      label: 'Full Name *',
                       hintText: 'e.g. Rahul Sharma',
                       controller: _nameController,
                       validator: (value) =>
@@ -380,6 +382,60 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+
+                    if (!isEditing) ...[
+                      // Initial Password
+                      AppTextField(
+                        label: 'Initial Password *',
+                        hintText: 'Minimum 6 characters',
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        validator: (value) => Validators.validatePassword(value),
+                        textInputAction: TextInputAction.next,
+                        prefixIcon: const Icon(
+                          Icons.lock_outline_rounded,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: AppColors.textSecondary,
+                            size: 20,
+                          ),
+                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Confirm Password
+                      AppTextField(
+                        label: 'Confirm Password *',
+                        hintText: 'Re-enter initial password',
+                        controller: _confirmPasswordController,
+                        obscureText: _obscureConfirmPassword,
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) return 'Please confirm password';
+                          if (value.trim() != _passwordController.text.trim()) return 'Passwords do not match';
+                          return null;
+                        },
+                        textInputAction: TextInputAction.next,
+                        prefixIcon: const Icon(
+                          Icons.lock_outline_rounded,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureConfirmPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: AppColors.textSecondary,
+                            size: 20,
+                          ),
+                          onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
 
                     // Date of Birth
                     Column(
@@ -401,68 +457,44 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                                 horizontal: 16,
                                 vertical: 14,
                               ),
-                              prefixIcon: const Icon(
-                                Icons.calendar_today_rounded,
-                                color: AppColors.textSecondary,
-                                size: 20,
-                              ),
-                              suffixIcon: const Icon(
-                                Icons.arrow_drop_down_rounded,
-                                color: AppColors.textSecondary,
-                              ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(
-                                  color: AppColors.border,
-                                  width: 1,
-                                ),
+                                borderSide: const BorderSide(color: AppColors.border),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: const BorderSide(
-                                  color: AppColors.primaryEmerald,
-                                  width: 1.5,
-                                ),
+                                    color: AppColors.primaryEmerald, width: 1.5),
                               ),
                             ),
-                            child: Text(
-                              _dobController.text.isNotEmpty
-                                  ? _dobController.text
-                                  : 'Select Date of Birth',
-                              style: _dobController.text.isNotEmpty
-                                  ? AppTextStyles.inputText
-                                  : const TextStyle(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 14,
-                                    ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  _dobController.text.isNotEmpty
+                                      ? _dobController.text
+                                      : 'Select Date of Birth',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: _dobController.text.isNotEmpty
+                                        ? AppColors.textMain
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.calendar_month_outlined,
+                                  color: AppColors.primaryEmerald,
+                                  size: 20,
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                        if (_dobController.text.isEmpty)
-                          FormField<String>(
-                            validator: (_) =>
-                                Validators.validateDateOfBirth(_dobController.text),
-                            builder: (field) {
-                              if (field.errorText != null) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 6, left: 12),
-                                  child: Text(
-                                    field.errorText!,
-                                    style: const TextStyle(
-                                      color: AppColors.error,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                );
-                              }
-                              return const SizedBox.shrink();
-                            },
-                          ),
                       ],
                     ),
                     const SizedBox(height: 16),
 
-                    // Gender Dropdown
+                    // Gender Selection
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -474,10 +506,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                         DropdownButtonFormField<String>(
                           initialValue: _selectedGender,
                           style: AppTextStyles.inputText,
-                          icon: const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            color: AppColors.textSecondary,
-                          ),
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: AppColors.surface,
@@ -485,38 +513,26 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                               horizontal: 16,
                               vertical: 14,
                             ),
-                            prefixIcon: const Icon(
-                              Icons.wc_rounded,
-                              color: AppColors.textSecondary,
-                              size: 20,
-                            ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: AppColors.border,
-                                width: 1,
-                              ),
+                              borderSide: const BorderSide(color: AppColors.border),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: const BorderSide(
-                                color: AppColors.primaryEmerald,
-                                width: 1.5,
-                              ),
+                                  color: AppColors.primaryEmerald, width: 1.5),
                             ),
                           ),
-                          items: const [
-                            DropdownMenuItem(
-                                value: 'Male', child: Text('Male')),
-                            DropdownMenuItem(
-                                value: 'Female', child: Text('Female')),
-                            DropdownMenuItem(
-                                value: 'Other', child: Text('Other')),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
+                          items: ['Male', 'Female', 'Other']
+                              .map((g) => DropdownMenuItem(
+                                    value: g,
+                                    child: Text(g),
+                                  ))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) {
                               setState(() {
-                                _selectedGender = value;
+                                _selectedGender = val;
                               });
                             }
                           },
@@ -525,14 +541,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Student Phone Number (10 digits only)
+                    // Student Phone
                     AppTextField(
-                      label: 'Student Phone Number',
-                      hintText: '9876543210',
+                      label: 'Student Phone',
+                      hintText: 'e.g. 9876543210',
                       controller: _phoneController,
-                      validator: (value) =>
-                          Validators.validate10DigitPhone(value, 'Student Phone'),
                       keyboardType: TextInputType.phone,
+                      validator: (value) =>
+                          Validators.validatePhoneOptional(value),
                       textInputAction: TextInputAction.next,
                       prefixIcon: const Icon(
                         Icons.phone_outlined,
@@ -542,26 +558,25 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Address (Multiline)
+                    // Address
                     AppTextField(
                       label: 'Address',
-                      hintText: 'Enter complete residential address...',
+                      hintText: 'Enter full residential address',
                       controller: _addressController,
-                      maxLines: 3,
                       validator: (value) =>
                           Validators.validateRequired(value, 'Address'),
                       textInputAction: TextInputAction.next,
                       prefixIcon: const Icon(
-                        Icons.location_on_outlined,
+                        Icons.home_outlined,
                         color: AppColors.textSecondary,
                         size: 20,
                       ),
                     ),
                     const SizedBox(height: 28),
 
-                    // SECTION 2 — PARENT / GUARDIAN
+                    // SECTION 2 — PARENT / GUARDIAN INFORMATION
                     const Text(
-                      'Parent / Guardian',
+                      'Parent / Guardian Information',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -570,7 +585,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Enter parent or guardian contact details.',
+                      'Primary contact details for progress and fee communications.',
                       style: AppTextStyles.subtitle,
                     ),
                     const SizedBox(height: 20),
@@ -578,10 +593,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     // Parent Name
                     AppTextField(
                       label: 'Parent / Guardian Name',
-                      hintText: 'e.g. Suresh Sharma',
+                      hintText: 'e.g. Ramesh Sharma',
                       controller: _parentNameController,
-                      validator: (value) =>
-                          Validators.validateRequired(value, 'Parent Name'),
+                      validator: (value) => Validators.validateRequired(
+                          value, 'Parent / Guardian Name'),
                       textInputAction: TextInputAction.next,
                       textCapitalization: TextCapitalization.words,
                       prefixIcon: const Icon(
@@ -592,26 +607,26 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Parent Phone Number (10 digits only)
+                    // Parent Phone
                     AppTextField(
-                      label: 'Parent / Guardian Phone Number',
-                      hintText: '9876543210',
+                      label: 'Parent Phone Number',
+                      hintText: 'e.g. 9876543210',
                       controller: _parentPhoneController,
-                      validator: (value) =>
-                          Validators.validate10DigitPhone(value, 'Parent Phone'),
                       keyboardType: TextInputType.phone,
+                      validator: (value) =>
+                          Validators.validatePhone(value, 'Parent Phone Number'),
                       textInputAction: TextInputAction.next,
                       prefixIcon: const Icon(
-                        Icons.contact_phone_outlined,
+                        Icons.phone_android_outlined,
                         color: AppColors.textSecondary,
                         size: 20,
                       ),
                     ),
                     const SizedBox(height: 28),
 
-                    // SECTION 3 — ACADEMIC
+                    // SECTION 3 — CLASS ASSIGNMENT & FEES
                     const Text(
-                      'Academic',
+                      'Class Assignment & Initial Fee Record',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -620,225 +635,104 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Assign class and status.',
+                      'Assign student to a class and configure initial academic fee.',
                       style: AppTextStyles.subtitle,
                     ),
                     const SizedBox(height: 20),
 
                     // Class Dropdown
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Class',
-                          style: AppTextStyles.inputLabel,
-                        ),
-                        const SizedBox(height: 6),
-                        _isLoadingClasses
-                            ? const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(16.0),
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.primaryEmerald,
+                    _isLoadingClasses
+                        ? const Center(child: CircularProgressIndicator())
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Assign Class *',
+                                    style: AppTextStyles.inputLabel,
                                   ),
-                                ),
-                              )
-                            : _availableClasses.isEmpty
-                                ? Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          AppColors.border.withValues(alpha: 0.25),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: AppColors.border,
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        const Text(
-                                          'Create a class first before adding a student.',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w500,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                        const SizedBox(height: 12),
-                                        PrimaryButton(
-                                          text: 'Create Class',
-                                          onPressed: () async {
-                                            await Navigator.of(context).push(
-                                              MaterialPageRoute(
-                                                builder: (context) =>
-                                                    const AddClassScreen(),
-                                              ),
-                                            );
-                                            _loadClasses();
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                : DropdownButtonFormField<String>(
-                                    initialValue: _selectedClassId,
-                                    style: AppTextStyles.inputText,
-                                    icon: const Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                    decoration: InputDecoration(
-                                      filled: true,
-                                      fillColor: AppColors.surface,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 14,
-                                      ),
-                                      prefixIcon: const Icon(
-                                        Icons.school_outlined,
-                                        color: AppColors.textSecondary,
-                                        size: 20,
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(12),
-                                        borderSide: const BorderSide(
-                                          color: AppColors.border,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(12),
-                                        borderSide: const BorderSide(
-                                          color: AppColors.primaryEmerald,
-                                          width: 1.5,
-                                        ),
-                                      ),
-                                    ),
-                                    items: _availableClasses.map((cls) {
-                                      return DropdownMenuItem<String>(
-                                        value: cls.classId,
-                                        child: Text(
-                                          '${cls.className} (${cls.standard} - ${cls.academicYear})',
+                                  TextButton.icon(
+                                    onPressed: () async {
+                                      final created = await Navigator.of(context)
+                                          .push<bool>(
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              const AddClassScreen(),
                                         ),
                                       );
-                                    }).toList(),
-                                    onChanged: (value) {
-                                      if (value != null) {
-                                        setState(() {
-                                          _selectedClassId = value;
-                                        });
+                                      if (created == true) {
+                                        _loadClasses();
                                       }
                                     },
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Please select a Class';
-                                      }
-                                      return null;
-                                    },
+                                    icon: const Icon(Icons.add_rounded,
+                                        size: 16,
+                                        color: AppColors.primaryEmerald),
+                                    label: const Text(
+                                      'Add New Class',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primaryEmerald,
+                                      ),
+                                    ),
                                   ),
-                      ],
-                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              DropdownButtonFormField<String>(
+                                initialValue: _selectedClassId,
+                                style: AppTextStyles.inputText,
+                                decoration: InputDecoration(
+                                  filled: true,
+                                  fillColor: AppColors.surface,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide:
+                                        const BorderSide(color: AppColors.border),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(
+                                        color: AppColors.primaryEmerald,
+                                        width: 1.5),
+                                  ),
+                                ),
+                                items: _availableClasses
+                                    .map((cls) => DropdownMenuItem(
+                                          value: cls.classId,
+                                          child: Text(
+                                            '${cls.className} (${cls.standard} - ${cls.medium})',
+                                          ),
+                                        ))
+                                    .toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() {
+                                      _selectedClassId = val;
+                                    });
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
                     const SizedBox(height: 16),
 
-                    // Status Dropdown
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Status',
-                          style: AppTextStyles.inputLabel,
-                        ),
-                        const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          initialValue: _selectedStatus,
-                          style: AppTextStyles.inputText,
-                          icon: const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            color: AppColors.textSecondary,
-                          ),
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: AppColors.surface,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            prefixIcon: const Icon(
-                              Icons.toggle_on_outlined,
-                              color: AppColors.textSecondary,
-                              size: 20,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: AppColors.border,
-                                width: 1,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: AppColors.primaryEmerald,
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                                value: 'active', child: Text('Active')),
-                            DropdownMenuItem(
-                                value: 'inactive', child: Text('Inactive')),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedStatus = value;
-                              });
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-
-                    // SECTION 4 — FEE DETAILS (Only when creating new student)
                     if (!isEditing) ...[
-                      const SizedBox(height: 28),
-                      const Text(
-                        'Fee Details',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textMain,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Set initial tuition fee and discount for this student.',
-                        style: AppTextStyles.subtitle,
-                      ),
-                      const SizedBox(height: 20),
-
+                      // Total Fees
                       AppTextField(
-                        label: 'Total Fees (₹)',
+                        label: 'Total Payable Fee (₹)',
                         hintText: 'e.g. 30000',
                         controller: _totalFeesController,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter Total Fees';
-                          }
-                          if (double.tryParse(value.trim()) == null ||
-                              double.parse(value.trim()) < 0) {
-                            return 'Please enter a valid amount >= 0';
-                          }
-                          return null;
-                        },
                         keyboardType: TextInputType.number,
+                        validator: (value) =>
+                            Validators.validateRequired(value, 'Total Fees'),
                         textInputAction: TextInputAction.next,
                         prefixIcon: const Icon(
                           Icons.currency_rupee_rounded,
@@ -848,35 +742,72 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       ),
                       const SizedBox(height: 16),
 
+                      // Discount
                       AppTextField(
-                        label: 'Discount (₹)',
-                        hintText: 'e.g. 0',
+                        label: 'Scholarship / Discount (₹)',
+                        hintText: 'e.g. 2000',
                         controller: _discountController,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return null;
-                          }
-                          final disc = double.tryParse(value.trim());
-                          if (disc == null || disc < 0) {
-                            return 'Please enter a valid discount >= 0';
-                          }
-                          return null;
-                        },
                         keyboardType: TextInputType.number,
+                        validator: (value) =>
+                            Validators.validateRequired(value, 'Discount'),
                         textInputAction: TextInputAction.done,
                         prefixIcon: const Icon(
-                          Icons.local_offer_outlined,
+                          Icons.card_giftcard_rounded,
                           color: AppColors.textSecondary,
                           size: 20,
                         ),
                       ),
+                      const SizedBox(height: 16),
                     ],
 
+                    // Status Dropdown
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Account Status',
+                          style: AppTextStyles.inputLabel,
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          initialValue: _selectedStatus,
+                          style: AppTextStyles.inputText,
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: AppColors.surface,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                  color: AppColors.primaryEmerald, width: 1.5),
+                            ),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'active', child: Text('Active')),
+                            DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _selectedStatus = val;
+                              });
+                            }
+                          },
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 32),
 
-                    // Primary Action Button
+                    // SUBMIT BUTTON
                     PrimaryButton(
-                      text: isEditing ? 'Update Student' : 'Create Student',
+                      text: isEditing ? 'Save Changes' : 'Add Student Record',
                       isLoading: _viewModel.isActionLoading,
                       onPressed: _viewModel.isActionLoading ? null : _handleSave,
                     ),

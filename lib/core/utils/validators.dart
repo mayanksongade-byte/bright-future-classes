@@ -17,6 +17,17 @@ class Validators {
     return null;
   }
 
+  static String? validatePhoneOptional(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+    final cleanPhone = value.trim().replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    if (!RegExp(r'^\+?[0-9]{7,15}$').hasMatch(cleanPhone)) {
+      return 'Please enter a valid phone number';
+    }
+    return null;
+  }
+
   static String? validate10DigitPhone(String? value, [String fieldName = 'Phone number']) {
     if (value == null || value.trim().isEmpty) {
       return 'Please enter $fieldName';

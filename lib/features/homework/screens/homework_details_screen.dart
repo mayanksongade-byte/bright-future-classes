@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../data/services/firestore_service.dart';
 import '../view_models/homework_view_model.dart';
 import 'add_edit_homework_screen.dart';
 
@@ -18,12 +20,35 @@ class _HomeworkDetailsScreenState extends State<HomeworkDetailsScreen> {
   late HomeworkItem _item;
   late final HomeworkViewModel _viewModel;
 
+  bool _isStudent = false;
+  String _currentStudentId = '';
+
   @override
   void initState() {
     super.initState();
     _item = widget.homeworkItem;
     _viewModel = HomeworkViewModel();
     _viewModel.addListener(_onViewModelChange);
+    _checkUserRoleAndStudentId();
+  }
+
+  Future<void> _checkUserRoleAndStudentId() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final userDoc = await FirestoreService().getUserDocument(user.uid);
+      final role = (userDoc?['role'] as String? ?? 'admin').toLowerCase();
+      if (role == 'student') {
+        final studentDocs = await FirestoreService().getStudentsDocuments();
+        for (var d in studentDocs) {
+          if (d.id == user.uid || (d.data()['userId'] != null && d.data()['userId'] == user.uid)) {
+            _currentStudentId = d.id;
+            break;
+          }
+        }
+        if (_currentStudentId.isEmpty) _currentStudentId = user.uid;
+        if (mounted) setState(() => _isStudent = true);
+      }
+    }
   }
 
   void _onViewModelChange() {
@@ -144,33 +169,35 @@ class _HomeworkDetailsScreenState extends State<HomeworkDetailsScreen> {
             color: AppColors.textMain,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined,
-                color: AppColors.primaryEmerald),
-            onPressed: () async {
-              final updated = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (context) => AddEditHomeworkScreen(
-                    homeworkToEdit: _item.homework,
-                    preloadedClasses: _viewModel.classes,
-                  ),
+        actions: _isStudent
+            ? []
+            : [
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined,
+                      color: AppColors.primaryEmerald),
+                  onPressed: () async {
+                    final updated = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (context) => AddEditHomeworkScreen(
+                          homeworkToEdit: _item.homework,
+                          preloadedClasses: _viewModel.classes,
+                        ),
+                      ),
+                    );
+                    if (updated == true) {
+                      await _refresh();
+                    }
+                  },
+                  tooltip: 'Edit',
                 ),
-              );
-              if (updated == true) {
-                await _refresh();
-              }
-            },
-            tooltip: 'Edit',
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded,
-                color: AppColors.error),
-            onPressed: _confirmDelete,
-            tooltip: 'Delete',
-          ),
-          const SizedBox(width: 8),
-        ],
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded,
+                      color: AppColors.error),
+                  onPressed: _confirmDelete,
+                  tooltip: 'Delete',
+                ),
+                const SizedBox(width: 8),
+              ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: AppColors.border, height: 1),

@@ -36,6 +36,23 @@ class FirestoreService {
         .set(data, SetOptions(merge: true));
   }
 
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  getUsersDocumentsByUserId(String userId) async {
+    final snapshot = await _firestore
+        .collection('users')
+        .where('userId', isEqualTo: userId.trim().toUpperCase())
+        .get();
+    return snapshot.docs;
+  }
+
+  Future<void> savePasswordResetAudit(Map<String, dynamic> auditData) async {
+    final docId = _firestore.collection('password_resets_audit').doc().id;
+    await _firestore
+        .collection('password_resets_audit')
+        .doc(docId)
+        .set(auditData, SetOptions(merge: true));
+  }
+
   // Login ID Mapping Methods
   Future<Map<String, dynamic>?> getLoginIdDocument(String userId) async {
     final formatted = userId.trim().toUpperCase();

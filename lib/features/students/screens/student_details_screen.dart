@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
+import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/attendance_model.dart';
 import '../../../data/models/class_model.dart';
 import '../../../data/models/complaint_model.dart';
@@ -616,6 +617,299 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
     );
   }
 
+  Future<void> _showEditStudentContactModal() async {
+    final phoneController = TextEditingController(text: _student.phone);
+    final addressController = TextEditingController(text: _student.address);
+    final parentNameController = TextEditingController(text: _student.parentName);
+    final parentPhoneController = TextEditingController(text: _student.parentPhone);
+    final formKey = GlobalKey<FormState>();
+
+    bool isSavingModal = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                top: 20,
+                left: 20,
+                right: 20,
+              ),
+              child: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.border,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Edit Contact Details',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textMain,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: phoneController,
+                        style: const TextStyle(fontSize: 14, color: AppColors.textMain),
+                        decoration: InputDecoration(
+                          labelText: 'Student Phone',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: addressController,
+                        style: const TextStyle(fontSize: 14, color: AppColors.textMain),
+                        decoration: InputDecoration(
+                          labelText: 'Address',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: parentNameController,
+                        style: const TextStyle(fontSize: 14, color: AppColors.textMain),
+                        decoration: InputDecoration(
+                          labelText: 'Parent Name',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: parentPhoneController,
+                        style: const TextStyle(fontSize: 14, color: AppColors.textMain),
+                        decoration: InputDecoration(
+                          labelText: 'Parent Phone',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      PrimaryButton(
+                        text: 'Save Contact Details',
+                        isLoading: isSavingModal,
+                        onPressed: isSavingModal ? null : () async {
+                          if (!formKey.currentState!.validate()) return;
+                          setModalState(() => isSavingModal = true);
+                          final messenger = ScaffoldMessenger.of(context);
+                          final nav = Navigator.of(context);
+                          try {
+                            final updated = _student.copyWith(
+                              phone: phoneController.text.trim(),
+                              address: addressController.text.trim(),
+                              parentName: parentNameController.text.trim(),
+                              parentPhone: parentPhoneController.text.trim(),
+                            );
+                            await _studentRepository.updateStudent(updated);
+                            if (mounted) {
+                              setState(() {
+                                _student = updated;
+                              });
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text('Contact details updated successfully.'),
+                                  backgroundColor: AppColors.primaryEmerald,
+                                ),
+                              );
+                              nav.pop();
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              setModalState(() => isSavingModal = false);
+                              messenger.showSnackBar(
+                                SnackBar(content: Text('Failed to update details: $e'), backgroundColor: AppColors.error),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _handleAdminPasswordReset() {
+    final formKey = GlobalKey<FormState>();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    bool isSaving = false;
+    String? modalError;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Reset Password',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textMain),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_student.name} (${_student.studentId} • STUDENT)',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (modalError != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(modalError!, style: const TextStyle(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.w600)),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      TextFormField(
+                        controller: newPasswordController,
+                        obscureText: obscureNew,
+                        style: const TextStyle(fontSize: 14, color: AppColors.textMain),
+                        decoration: InputDecoration(
+                          labelText: 'New Password *',
+                          hintText: 'Min 6 characters',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          suffixIcon: IconButton(
+                            icon: Icon(obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+                            onPressed: () => setModalState(() => obscureNew = !obscureNew),
+                          ),
+                        ),
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) return 'Please enter new password';
+                          if (val.trim().length < 6) return 'Password must be at least 6 characters';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: confirmPasswordController,
+                        obscureText: obscureConfirm,
+                        style: const TextStyle(fontSize: 14, color: AppColors.textMain),
+                        decoration: InputDecoration(
+                          labelText: 'Confirm New Password *',
+                          hintText: 'Re-enter new password',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          suffixIcon: IconButton(
+                            icon: Icon(obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+                            onPressed: () => setModalState(() => obscureConfirm = !obscureConfirm),
+                          ),
+                        ),
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) return 'Please confirm new password';
+                          if (val.trim() != newPasswordController.text.trim()) return 'Passwords do not match';
+                          return null;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          if (!formKey.currentState!.validate()) return;
+                          setModalState(() {
+                            isSaving = true;
+                            modalError = null;
+                          });
+
+                          try {
+                            final adminUser = FirebaseAuth.instance.currentUser;
+                            final adminUid = adminUser?.uid ?? 'admin';
+
+                            await _studentRepository.resetStudentPassword(
+                              studentId: _student.studentId,
+                              newPassword: newPasswordController.text.trim(),
+                              adminUid: adminUid,
+                            );
+
+                            if (context.mounted) {
+                              Navigator.of(dialogContext).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Student password reset successfully.'),
+                                  backgroundColor: AppColors.primaryEmerald,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            setModalState(() {
+                              isSaving = false;
+                              modalError = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryEmerald,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: isSaving
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Reset Password'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isActive = _student.status.toLowerCase() == 'active';
@@ -644,6 +938,14 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
             ? [
                 IconButton(
                   icon: const Icon(
+                    Icons.lock_reset_outlined,
+                    color: AppColors.primaryEmerald,
+                  ),
+                  onPressed: _handleAdminPasswordReset,
+                  tooltip: 'Reset Student Password',
+                ),
+                IconButton(
+                  icon: const Icon(
                     Icons.edit_outlined,
                     color: AppColors.primaryEmerald,
                   ),
@@ -651,7 +953,18 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                   tooltip: 'Edit Student',
                 ),
               ]
-            : [],
+            : (!_isTeacher
+                ? [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.edit_outlined,
+                        color: AppColors.primaryEmerald,
+                      ),
+                      onPressed: _showEditStudentContactModal,
+                      tooltip: 'Edit Contact Info',
+                    ),
+                  ]
+                : []),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: AppColors.border, height: 1),

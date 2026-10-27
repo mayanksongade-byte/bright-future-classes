@@ -19,7 +19,7 @@ class AuthRepository {
   }) async {
     final trimmedInput = loginInput.trim();
     if (trimmedInput.isEmpty) {
-      throw Exception('Please enter Email or User ID.');
+      throw Exception('Please enter Student ID, User ID or Email.');
     }
     if (password.trim().isEmpty) {
       throw Exception('Please enter your password.');
@@ -32,10 +32,55 @@ class AuthRepository {
 
     if (!isEmail) {
       final formattedUserId = trimmedInput.toUpperCase();
-      final loginData = await _firestoreService.getLoginIdDocument(formattedUserId);
+      Map<String, dynamic>? loginData =
+          await _firestoreService.getLoginIdDocument(formattedUserId);
 
       if (loginData == null) {
-        throw Exception('Teacher User ID $formattedUserId does not exist.');
+        final userDocs =
+            await _firestoreService.getUsersDocumentsByUserId(formattedUserId);
+        if (userDocs.isNotEmpty) {
+          final uDoc = userDocs.first.data();
+          final email = uDoc['email'] as String? ?? '';
+          final role = (uDoc['role'] as String? ?? 'admin').toLowerCase();
+          final isActive = uDoc['isActive'] as bool? ?? true;
+          if (email.isNotEmpty) {
+            loginData = {
+              'authEmail': email,
+              'isActive': isActive,
+              'role': role,
+            };
+          }
+        }
+      }
+
+      if (loginData == null) {
+        final studentDoc =
+            await _firestoreService.getStudentDocument(formattedUserId);
+        if (studentDoc != null) {
+          final uid = studentDoc['userId'] as String? ??
+              studentDoc['uid'] as String? ??
+              '';
+          if (uid.isNotEmpty) {
+            final userDoc = await _firestoreService.getUserDocument(uid);
+            if (userDoc != null) {
+              final email = userDoc['email'] as String? ?? '';
+              final role = (userDoc['role'] as String? ?? 'student').toLowerCase();
+              final isActive = userDoc['isActive'] as bool? ?? true;
+              if (email.isNotEmpty) {
+                loginData = {
+                  'authEmail': email,
+                  'isActive': isActive,
+                  'role': role,
+                };
+              }
+            }
+          }
+        }
+      }
+
+      if (loginData == null) {
+        throw Exception(
+            'No account found for Student ID / User ID "$formattedUserId".');
       }
 
       final isActive = loginData['isActive'] as bool? ?? false;
@@ -47,7 +92,7 @@ class AuthRepository {
       final authEmail = loginData['authEmail'] as String? ?? '';
       if (authEmail.isEmpty) {
         throw Exception(
-            'No email address associated with User ID "$formattedUserId".');
+            'No account associated with Student ID / User ID "$formattedUserId".');
       }
 
       emailToUse = authEmail;
@@ -79,7 +124,23 @@ class AuthRepository {
     try {
       final data = await _firestoreService.getUserDocument(uid);
       if (data == null) return null;
-      return UserModel.fromMap(uid, data);
+
+      final String rawRole = data['role'] as String? ?? '';
+      String resolvedRole = rawRole.toLowerCase();
+      if (resolvedRole.isEmpty) {
+        if (data['teacherId'] != null && (data['teacherId'] as String).isNotEmpty) {
+          resolvedRole = 'teacher';
+        } else if (data['studentId'] != null && (data['studentId'] as String).isNotEmpty) {
+          resolvedRole = 'student';
+        } else {
+          resolvedRole = 'admin';
+        }
+      }
+
+      final updatedData = Map<String, dynamic>.from(data);
+      updatedData['role'] = resolvedRole;
+
+      return UserModel.fromMap(uid, updatedData);
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw Exception('Permission denied. Unable to access user profile.');
@@ -101,17 +162,17 @@ class AuthRepository {
   String _handleFirebaseAuthException(FirebaseAuthException e) {
     switch (e.code) {
       case 'invalid-credential':
-        return 'Invalid User ID/email or password. Please check your credentials and try again.';
+        return 'Invalid credentials. Please check your Student ID / User ID and password.';
       case 'user-not-found':
         return 'No account found with these credentials.';
       case 'wrong-password':
         return 'Incorrect password. Please try again.';
       case 'invalid-email':
-        return 'Please enter a valid email address or User ID.';
+        return 'Please enter a valid Student ID, User ID or Email.';
       case 'too-many-requests':
         return 'Too many failed login attempts. Please try again later.';
       case 'operation-not-allowed':
-        return 'Email/password sign-in is not enabled for this project.';
+        return 'Sign-in is not enabled for this project.';
       case 'network-request-failed':
         return 'Network error. Please check your internet connection.';
       case 'user-disabled':

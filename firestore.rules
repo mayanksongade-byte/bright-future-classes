@@ -111,7 +111,16 @@ service cloud.firestore {
         || (resource != null && resource.data.get('classId', '') != '' && isAssignedTeacher(resource.data.classId))
         || isStudentOwner(studentId)
       );
-      allow create, update, delete: if isActiveAdmin();
+      allow create, delete: if isActiveAdmin();
+      allow update: if request.auth != null && (
+        isActiveAdmin()
+        || (
+          isStudentOwner(studentId)
+          && request.resource.data.get('studentId', '') == resource.data.studentId
+          && request.resource.data.get('classId', '') == resource.data.classId
+          && request.resource.data.get('status', '') == resource.data.status
+        )
+      );
     }
 
     // Classes Collection: Authenticated users can read if assigned teacher or admin
@@ -202,9 +211,42 @@ service cloud.firestore {
       allow read, create, update, delete: if isActiveAdmin();
     }
 
-    // Homework Collection: Active Admin can manage homework
+    // Homework Collection: Active Admin, Assigned Teachers, and Enrolled Students
     match /homework/{homeworkId} {
-      allow read, create, update, delete: if isActiveAdmin();
+      allow read: if request.auth != null && (
+        isActiveAdmin()
+        || (resource != null && resource.data.get('classId', '') != '' && isAssignedTeacher(resource.data.classId))
+        || (
+          resource != null
+          && resource.data.get('classId', '') != ''
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['student', 'Student', 'STUDENT']
+            || isTeacher()
+          )
+        )
+      );
+      allow create: if request.auth != null && (
+        isActiveAdmin()
+        || (request.resource != null && request.resource.data.get('classId', '') != '' && isAssignedTeacher(request.resource.data.classId))
+      );
+      allow update: if request.auth != null && (
+        isActiveAdmin()
+        || (
+          resource != null
+          && resource.data.get('classId', '') != ''
+          && isAssignedTeacher(resource.data.classId)
+        )
+        || (
+          request.auth != null
+          && resource != null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['completedStudentIds', 'updatedAt'])
+        )
+      );
+      allow delete: if request.auth != null && (
+        isActiveAdmin()
+        || (resource != null && resource.data.get('classId', '') != '' && isAssignedTeacher(resource.data.classId))
+      );
     }
 
     // Tests & Marks Collections: Active Admin can manage tests/marks; Assigned teachers can read/create/update/delete
@@ -503,6 +545,11 @@ service cloud.firestore {
 
     // Settings Collection: Active Admin can read/write global institute settings
     match /settings/app {
+      allow read, write: if isActiveAdmin();
+    }
+
+    // Password Resets Audit Collection: Active Admin can read/write audit logs
+    match /password_resets_audit/{auditId} {
       allow read, write: if isActiveAdmin();
     }
 

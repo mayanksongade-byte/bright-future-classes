@@ -285,4 +285,56 @@ class TeacherRepository {
       return 0;
     }
   }
+
+  Future<void> resetTeacherPassword({
+    required String teacherId,
+    required String newPassword,
+    required String adminUid,
+  }) async {
+    final cleanPassword = newPassword.trim();
+    if (cleanPassword.length < 6) {
+      throw Exception('Password must be at least 6 characters.');
+    }
+
+    final formattedUserId = teacherId.trim().toUpperCase();
+    Map<String, dynamic>? loginData =
+        await _firestoreService.getLoginIdDocument(formattedUserId);
+
+    String authEmail = loginData?['authEmail'] as String? ?? '';
+    String targetUid = loginData?['uid'] as String? ?? '';
+
+    if (authEmail.isEmpty) {
+      final teacherDoc = await _firestoreService.getTeacherDocument(teacherId);
+      if (teacherDoc != null) {
+        final uid = teacherDoc['userId'] as String? ??
+            teacherDoc['uid'] as String? ??
+            teacherId;
+        final userDoc = await _firestoreService.getUserDocument(uid);
+        if (userDoc != null) {
+          authEmail = userDoc['email'] as String? ?? '';
+          targetUid = uid;
+        }
+      }
+    }
+
+    if (authEmail.isEmpty) {
+      authEmail = '${formattedUserId.toLowerCase()}@brightfutureclasses.app';
+    }
+
+    if (authEmail.contains('@') &&
+        !authEmail.endsWith('@brightfutureclasses.app') &&
+        !authEmail.endsWith('@student.brightfuture.local')) {
+      try {
+        await FirebaseAuth.instance.sendPasswordResetEmail(email: authEmail);
+      } catch (_) {}
+    }
+
+    await _firestoreService.savePasswordResetAudit({
+      'adminUid': adminUid,
+      'targetId': teacherId,
+      'targetRole': 'teacher',
+      'targetUid': targetUid,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
 }

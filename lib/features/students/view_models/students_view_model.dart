@@ -60,6 +60,7 @@ class StudentsViewModel extends ChangeNotifier {
     double discount = 0.0,
     String? classId,
     String status = 'active',
+    String? password,
   }) async {
     if (_isActionLoading) return false;
 
@@ -84,7 +85,14 @@ class StudentsViewModel extends ChangeNotifier {
         status: status,
       );
 
-      await _studentRepository.createStudent(student);
+      if (password != null && password.trim().isNotEmpty) {
+        await _studentRepository.createStudentAccountWithAuth(
+          student: student,
+          password: password.trim(),
+        );
+      } else {
+        await _studentRepository.createStudent(student);
+      }
 
       final fee = FeeModel(
         feeId: student.studentId,

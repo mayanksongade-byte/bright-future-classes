@@ -5,6 +5,7 @@ import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../admin/screens/admin_dashboard_screen.dart';
+import '../../student/screens/student_dashboard_screen.dart';
 import '../../teacher/screens/teacher_dashboard_screen.dart';
 import '../view_models/auth_view_model.dart';
 
@@ -60,7 +61,9 @@ class _LoginFormState extends State<LoginForm> {
       if (success) {
         final role = _authViewModel.userModel?.role.toLowerCase();
         Widget destination;
-        if (role == 'teacher') {
+        if (role == 'student') {
+          destination = const StudentDashboardScreen();
+        } else if (role == 'teacher') {
           destination = const TeacherDashboardScreen();
         } else {
           destination = const AdminDashboardScreen();
@@ -92,11 +95,16 @@ class _LoginFormState extends State<LoginForm> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AppTextField(
-            label: 'Email or User ID',
-            hintText: 'Enter your email or User ID',
+            label: 'Student ID / User ID / Email',
+            hintText: 'Enter Student ID, User ID or Email',
             controller: _userIdController,
-            validator: Validators.validateEmailOrUserId,
-            keyboardType: TextInputType.emailAddress,
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Please enter Student ID, User ID or Email';
+              }
+              return null;
+            },
+            keyboardType: TextInputType.text,
             textInputAction: TextInputAction.next,
             prefixIcon: const Icon(
               Icons.person_outline_rounded,

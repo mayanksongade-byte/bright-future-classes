@@ -24,4 +24,22 @@ class AuthService {
   Future<void> signOut() async {
     await _firebaseAuth.signOut();
   }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final user = _firebaseAuth.currentUser;
+    if (user == null || user.email == null) {
+      throw Exception('User is not authenticated.');
+    }
+
+    final cred = EmailAuthProvider.credential(
+      email: user.email!,
+      password: currentPassword,
+    );
+
+    await user.reauthenticateWithCredential(cred);
+    await user.updatePassword(newPassword);
+  }
 }

@@ -9,6 +9,9 @@ class HomeworkModel {
   final String dueDate;
   final String status; // 'active' or 'completed'
   final String createdBy;
+  final String? attachmentUrl;
+  final String? attachmentName;
+  final List<String> completedStudentIds;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -21,9 +24,17 @@ class HomeworkModel {
     required this.dueDate,
     this.status = 'active',
     required this.createdBy,
+    this.attachmentUrl,
+    this.attachmentName,
+    this.completedStudentIds = const [],
     this.createdAt,
     this.updatedAt,
   });
+
+  bool isCompletedBy(String studentId) {
+    if (studentId.isEmpty) return false;
+    return completedStudentIds.contains(studentId);
+  }
 
   factory HomeworkModel.fromMap(Map<String, dynamic> map, [String? docId]) {
     DateTime? parsedCreatedAt;
@@ -42,6 +53,12 @@ class HomeworkModel {
       parsedUpdatedAt = DateTime.tryParse(rawUpdatedAt);
     }
 
+    List<String> parsedCompletedIds = [];
+    final rawCompleted = map['completedStudentIds'];
+    if (rawCompleted is List) {
+      parsedCompletedIds = rawCompleted.map((e) => e.toString()).toSet().toList();
+    }
+
     return HomeworkModel(
       homeworkId: docId ?? map['homeworkId'] as String? ?? '',
       classId: map['classId'] as String? ?? '',
@@ -51,6 +68,9 @@ class HomeworkModel {
       dueDate: map['dueDate'] as String? ?? '',
       status: map['status'] as String? ?? 'active',
       createdBy: map['createdBy'] as String? ?? '',
+      attachmentUrl: map['attachmentUrl'] as String?,
+      attachmentName: map['attachmentName'] as String?,
+      completedStudentIds: parsedCompletedIds,
       createdAt: parsedCreatedAt,
       updatedAt: parsedUpdatedAt,
     );
@@ -66,6 +86,9 @@ class HomeworkModel {
       'dueDate': dueDate,
       'status': status,
       'createdBy': createdBy,
+      'attachmentUrl': attachmentUrl,
+      'attachmentName': attachmentName,
+      'completedStudentIds': completedStudentIds.toSet().toList(),
       'createdAt': createdAt != null
           ? Timestamp.fromDate(createdAt!)
           : FieldValue.serverTimestamp(),
@@ -82,6 +105,9 @@ class HomeworkModel {
     String? dueDate,
     String? status,
     String? createdBy,
+    String? attachmentUrl,
+    String? attachmentName,
+    List<String>? completedStudentIds,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -94,6 +120,11 @@ class HomeworkModel {
       dueDate: dueDate ?? this.dueDate,
       status: status ?? this.status,
       createdBy: createdBy ?? this.createdBy,
+      attachmentUrl: attachmentUrl ?? this.attachmentUrl,
+      attachmentName: attachmentName ?? this.attachmentName,
+      completedStudentIds: completedStudentIds != null
+          ? completedStudentIds.toSet().toList()
+          : this.completedStudentIds,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

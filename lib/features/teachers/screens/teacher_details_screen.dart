@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_loading_indicator.dart';
@@ -9,6 +10,7 @@ import '../../../data/repositories/attendance_repository.dart';
 import '../../../data/repositories/class_repository.dart';
 import '../../../data/repositories/student_repository.dart';
 import '../../../data/repositories/teacher_repository.dart';
+import '../../../data/services/firestore_service.dart';
 import '../../classes/screens/class_details_screen.dart';
 import 'add_teacher_screen.dart';
 
@@ -28,6 +30,7 @@ class _TeacherDetailsScreenState extends State<TeacherDetailsScreen> {
   final ClassRepository _classRepository = ClassRepository();
   final StudentRepository _studentRepository = StudentRepository();
   final AttendanceRepository _attendanceRepository = AttendanceRepository();
+  final FirestoreService _firestoreService = FirestoreService();
 
   bool _isLoading = true;
   List<ClassModel> _assignedClasses = [];
@@ -37,12 +40,178 @@ class _TeacherDetailsScreenState extends State<TeacherDetailsScreen> {
   int _todayPresent = 0;
   int _todayAbsent = 0;
   bool _hasTodayAttendance = false;
+  bool _isAdmin = false;
 
   @override
   void initState() {
     super.initState();
     _teacher = widget.teacher;
+    _checkAdminRole();
     _loadAllTeacherDetails();
+  }
+
+  Future<void> _checkAdminRole() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final userDoc = await _firestoreService.getUserDocument(user.uid);
+      final role = (userDoc?['role'] as String? ?? 'admin').toLowerCase();
+      final isActive = userDoc?['isActive'] as bool? ?? true;
+      if (mounted) {
+        setState(() {
+          _isAdmin = role == 'admin' && isActive;
+        });
+      }
+    }
+  }
+
+  void _showResetTeacherPasswordModal() {
+    final formKey = GlobalKey<FormState>();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    bool isSaving = false;
+    String? modalError;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Reset Password',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textMain),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_teacher.name} (${_teacher.teacherId} • TEACHER)',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (modalError != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(modalError!, style: const TextStyle(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.w600)),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      TextFormField(
+                        controller: newPasswordController,
+                        obscureText: obscureNew,
+                        style: const TextStyle(fontSize: 14, color: AppColors.textMain),
+                        decoration: InputDecoration(
+                          labelText: 'New Password *',
+                          hintText: 'Min 6 characters',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          suffixIcon: IconButton(
+                            icon: Icon(obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+                            onPressed: () => setModalState(() => obscureNew = !obscureNew),
+                          ),
+                        ),
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) return 'Please enter new password';
+                          if (val.trim().length < 6) return 'Password must be at least 6 characters';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: confirmPasswordController,
+                        obscureText: obscureConfirm,
+                        style: const TextStyle(fontSize: 14, color: AppColors.textMain),
+                        decoration: InputDecoration(
+                          labelText: 'Confirm New Password *',
+                          hintText: 'Re-enter new password',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          suffixIcon: IconButton(
+                            icon: Icon(obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+                            onPressed: () => setModalState(() => obscureConfirm = !obscureConfirm),
+                          ),
+                        ),
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) return 'Please confirm new password';
+                          if (val.trim() != newPasswordController.text.trim()) return 'Passwords do not match';
+                          return null;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          if (!formKey.currentState!.validate()) return;
+                          setModalState(() {
+                            isSaving = true;
+                            modalError = null;
+                          });
+
+                          try {
+                            final adminUser = FirebaseAuth.instance.currentUser;
+                            final adminUid = adminUser?.uid ?? 'admin';
+
+                            await _teacherRepository.resetTeacherPassword(
+                              teacherId: _teacher.teacherId,
+                              newPassword: newPasswordController.text.trim(),
+                              adminUid: adminUid,
+                            );
+
+                            if (context.mounted) {
+                              Navigator.of(dialogContext).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Teacher password reset successfully.'),
+                                  backgroundColor: AppColors.primaryEmerald,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            setModalState(() {
+                              isSaving = false;
+                              modalError = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryEmerald,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: isSaving
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Reset Password'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _loadAllTeacherDetails() async {
@@ -155,13 +324,26 @@ class _TeacherDetailsScreenState extends State<TeacherDetailsScreen> {
           ),
         ),
         centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, color: AppColors.primaryEmerald),
-            onPressed: _navigateToEditTeacher,
-            tooltip: 'Edit Teacher',
-          ),
-        ],
+        actions: _isAdmin
+            ? [
+                IconButton(
+                  icon: const Icon(
+                    Icons.lock_reset_outlined,
+                    color: AppColors.primaryEmerald,
+                  ),
+                  onPressed: _showResetTeacherPasswordModal,
+                  tooltip: 'Reset Teacher Password',
+                ),
+                IconButton(
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    color: AppColors.primaryEmerald,
+                  ),
+                  onPressed: _navigateToEditTeacher,
+                  tooltip: 'Edit Teacher',
+                ),
+              ]
+            : [],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: AppColors.border, height: 1),
