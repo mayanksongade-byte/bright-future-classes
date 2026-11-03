@@ -1,14 +1,20 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import '../models/teacher_model.dart';
 import '../services/firestore_service.dart';
+import '../services/teacher_password_reset_client.dart';
 
 class TeacherRepository {
   final FirestoreService _firestoreService;
+  final TeacherPasswordResetClient _passwordResetClient;
 
-  TeacherRepository({FirestoreService? firestoreService})
-      : _firestoreService = firestoreService ?? FirestoreService();
+  TeacherRepository({
+    FirestoreService? firestoreService,
+    TeacherPasswordResetClient? passwordResetClient,
+  })  : _firestoreService = firestoreService ?? FirestoreService(),
+        _passwordResetClient = passwordResetClient ?? TeacherPasswordResetClient();
 
   String generateTeacherId() {
     return _firestoreService.generateTeacherId();
@@ -286,55 +292,35 @@ class TeacherRepository {
     }
   }
 
+  /// Resets a teacher's password on their EXISTING Firebase Auth account
+  /// via the secure external administrative Node.js backend.
+  ///
+  /// This operation:
+  /// - Sends the Admin's verified Firebase ID token to the backend.
+  /// - Updates the password of the teacher's existing Auth UID using Firebase Admin SDK.
+  /// - NEVER creates a new Firebase Auth user or modifies the UID.
+  /// - NEVER alters existing teacher documents, assignments, attendance, or grades.
   Future<void> resetTeacherPassword({
     required String teacherId,
     required String newPassword,
     required String adminUid,
+    User? adminUser,
   }) async {
     final cleanPassword = newPassword.trim();
-    if (cleanPassword.length < 6) {
-      throw Exception('Password must be at least 6 characters.');
+    if (cleanPassword.length < 8) {
+      throw Exception('Password must be at least 8 characters long.');
     }
 
-    final formattedUserId = teacherId.trim().toUpperCase();
-    Map<String, dynamic>? loginData =
-        await _firestoreService.getLoginIdDocument(formattedUserId);
-
-    String authEmail = loginData?['authEmail'] as String? ?? '';
-    String targetUid = loginData?['uid'] as String? ?? '';
-
-    if (authEmail.isEmpty) {
-      final teacherDoc = await _firestoreService.getTeacherDocument(teacherId);
-      if (teacherDoc != null) {
-        final uid = teacherDoc['userId'] as String? ??
-            teacherDoc['uid'] as String? ??
-            teacherId;
-        final userDoc = await _firestoreService.getUserDocument(uid);
-        if (userDoc != null) {
-          authEmail = userDoc['email'] as String? ?? '';
-          targetUid = uid;
-        }
-      }
+    final currentUser = adminUser ?? FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw Exception('Authentication session expired. Please sign in again.');
     }
 
-    if (authEmail.isEmpty) {
-      authEmail = '${formattedUserId.toLowerCase()}@brightfutureclasses.app';
-    }
-
-    if (authEmail.contains('@') &&
-        !authEmail.endsWith('@brightfutureclasses.app') &&
-        !authEmail.endsWith('@student.brightfuture.local')) {
-      try {
-        await FirebaseAuth.instance.sendPasswordResetEmail(email: authEmail);
-      } catch (_) {}
-    }
-
-    await _firestoreService.savePasswordResetAudit({
-      'adminUid': adminUid,
-      'targetId': teacherId,
-      'targetRole': 'teacher',
-      'targetUid': targetUid,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+    // Call the external secure backend
+    await _passwordResetClient.resetTeacherPassword(
+      teacherId: teacherId,
+      newPassword: cleanPassword,
+      adminUser: currentUser,
+    );
   }
 }

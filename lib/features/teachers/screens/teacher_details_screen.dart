@@ -117,7 +117,7 @@ class _TeacherDetailsScreenState extends State<TeacherDetailsScreen> {
                         style: const TextStyle(fontSize: 14, color: AppColors.textMain),
                         decoration: InputDecoration(
                           labelText: 'New Password *',
-                          hintText: 'Min 6 characters',
+                          hintText: 'Min 8 characters',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           suffixIcon: IconButton(
@@ -127,7 +127,7 @@ class _TeacherDetailsScreenState extends State<TeacherDetailsScreen> {
                         ),
                         validator: (val) {
                           if (val == null || val.trim().isEmpty) return 'Please enter new password';
-                          if (val.trim().length < 6) return 'Password must be at least 6 characters';
+                          if (val.trim().length < 8) return 'Password must be at least 8 characters';
                           return null;
                         },
                       ),
